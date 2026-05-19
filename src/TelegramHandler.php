@@ -34,9 +34,9 @@ final class TelegramHandler extends AbstractProcessingHandler
 
         cache()->put($cacheKey, true, 60);
 
-        $appName = config('app.name', 'Laravel');
-        $appEnv = config('app.env', 'production');
-        $appUrl = config('app.url', '');
+        $appName = config()->string('app.name', 'Laravel');
+        $appEnv = config()->string('app.env', 'production');
+        $appUrl = config()->string('app.url');
         $level = $record->level->name;
 
         $message = $record->message;

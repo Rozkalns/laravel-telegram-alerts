@@ -16,10 +16,8 @@ final class NotifyDeployCommand extends Command
 {
     public function handle(): int
     {
-        /** @var string $token */
-        $token = config('telegram-alerts.bot_token', '');
-        /** @var string $chatId */
-        $chatId = config('telegram-alerts.chat_id', '');
+        $token = config()->string('telegram-alerts.bot_token');
+        $chatId = config()->string('telegram-alerts.chat_id');
 
         if ($token === '' || $chatId === '') {
             $this->warn('Telegram not configured — skipping notification.');
@@ -27,8 +25,8 @@ final class NotifyDeployCommand extends Command
             return self::SUCCESS;
         }
 
-        $appName = config('app.name', 'Laravel');
-        $appUrl = config('app.url', '');
+        $appName = config()->string('app.name', 'Laravel');
+        $appUrl = config()->string('app.url');
         $commit = trim(Process::run('git log -1 --format="%h %s"')->output());
 
         $text = implode("\n", [
