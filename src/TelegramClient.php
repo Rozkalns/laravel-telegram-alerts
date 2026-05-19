@@ -39,6 +39,8 @@ final readonly class TelegramClient
                 );
 
                 if ($response->successful()) {
+                    $this->logInfo('Telegram alert sent', $text);
+
                     return;
                 }
 
@@ -50,7 +52,7 @@ final readonly class TelegramClient
                         continue;
                     }
 
-                    $this->logWarning('Telegram alert delivery failed after retries', $response->status());
+                    $this->logWarning('Telegram alert delivery failed after retries', $text, $response->status());
 
                     return;
                 }
@@ -62,12 +64,12 @@ final readonly class TelegramClient
                         continue;
                     }
 
-                    $this->logWarning('Telegram alert delivery failed after retries', $response->status());
+                    $this->logWarning('Telegram alert delivery failed after retries', $text, $response->status());
 
                     return;
                 }
 
-                $this->logWarning('Telegram alert delivery failed', $response->status());
+                $this->logWarning('Telegram alert delivery failed', $text, $response->status());
 
                 return;
             } catch (Throwable $e) {
@@ -77,7 +79,7 @@ final readonly class TelegramClient
                     continue;
                 }
 
-                $this->logWarning('Telegram alert delivery failed after retries', exception: $e);
+                $this->logWarning('Telegram alert delivery failed after retries', $text, exception: $e);
 
                 return;
             }
@@ -98,9 +100,17 @@ final readonly class TelegramClient
         return $this->token !== '' && $this->chatId !== '';
     }
 
-    private function logWarning(string $message, ?int $status = null, ?Throwable $exception = null): void
+    private function logInfo(string $message, string $text): void
+    {
+        Log::channel('single')->info($message, [
+            'text' => mb_substr($text, 0, 200),
+        ]);
+    }
+
+    private function logWarning(string $message, string $text, ?int $status = null, ?Throwable $exception = null): void
     {
         $context = array_filter([
+            'text' => mb_substr($text, 0, 200),
             'status' => $status,
             'exception' => $exception,
         ]);
