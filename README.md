@@ -131,4 +131,4 @@ The package registers a `telegram` channel in Laravel's logging system via its s
 
 ## License
 
-MIT
+[Beerware](LICENSE.md) — do whatever you want. If we meet and you think this is worth it, buy me a beer.

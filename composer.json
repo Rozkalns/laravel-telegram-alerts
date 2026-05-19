@@ -2,7 +2,7 @@
     "name": "rozkalns/laravel-telegram-alerts",
     "description": "Telegram error notifications and deploy alerts for Laravel",
     "keywords": ["laravel", "telegram", "alerts", "logging", "notifications"],
-    "license": "MIT",
+    "license": "Beerware",
     "authors": [
         {
             "name": "Roberts Rožkalns",
