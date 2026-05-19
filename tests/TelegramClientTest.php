@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
+use Rozkalns\TelegramAlerts\Jobs\SendTelegramMessageJob;
 use Rozkalns\TelegramAlerts\TelegramClient;
 
 it('sends a message to the telegram api', function (): void {
@@ -36,13 +40,171 @@ it('is a no-op when chat id is empty', function (): void {
     Http::assertNothingSent();
 });
 
-it('swallows http exceptions silently', function (): void {
-    Http::fake(fn () => throw new RuntimeException('Connection failed'));
+it('retries on 429 and respects retry-after header', function (): void {
+    Sleep::fake();
+    Http::fake([
+        'api.telegram.org/*' => Http::sequence()
+            ->push('', 429, ['Retry-After' => '2'])
+            ->push('', 200),
+    ]);
 
     $client = new TelegramClient(token: 'bot-token', chatId: '12345');
     $client->send('Hello');
 
-    expect(true)->toBeTrue();
+    Http::assertSentCount(2);
+    Sleep::assertSleptTimes(1);
+    Sleep::assertSequence([Sleep::for(2)->seconds()]);
+});
+
+it('retries on 5xx with exponential backoff', function (): void {
+    Sleep::fake();
+    Http::fake([
+        'api.telegram.org/*' => Http::sequence()
+            ->push('', 500)
+            ->push('', 502)
+            ->push('', 200),
+    ]);
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    Http::assertSentCount(3);
+    Sleep::assertSleptTimes(2);
+    Sleep::assertSequence([Sleep::for(1)->seconds(), Sleep::for(2)->seconds()]);
+});
+
+it('does not retry on 4xx client error', function (): void {
+    Sleep::fake();
+    $logger = Mockery::mock();
+    $logger->shouldReceive('warning')->once();
+    Log::shouldReceive('channel')->with('single')->andReturn($logger);
+    Http::fake([
+        'api.telegram.org/*' => Http::response('', 400),
+    ]);
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    Http::assertSentCount(1);
+    Sleep::assertSleptTimes(0);
+});
+
+it('does not retry on 401 unauthorized', function (): void {
+    Sleep::fake();
+    $logger = Mockery::mock();
+    $logger->shouldReceive('warning')->once();
+    Log::shouldReceive('channel')->with('single')->andReturn($logger);
+    Http::fake([
+        'api.telegram.org/*' => Http::response('', 401),
+    ]);
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    Http::assertSentCount(1);
+    Sleep::assertSleptTimes(0);
+});
+
+it('retries on network exception', function (): void {
+    Sleep::fake();
+    $callCount = 0;
+    Http::fake(function () use (&$callCount) {
+        $callCount++;
+        if ($callCount < 3) {
+            throw new RuntimeException('Connection failed');
+        }
+
+        return Http::response('', 200);
+    });
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    expect($callCount)->toBe(3);
+    Sleep::assertSleptTimes(2);
+    Sleep::assertSequence([Sleep::for(1)->seconds(), Sleep::for(1)->seconds()]);
+});
+
+it('logs warning when all retries exhausted on 5xx', function (): void {
+    Sleep::fake();
+    $logger = Mockery::mock();
+    $logger->shouldReceive('warning')->once();
+    Log::shouldReceive('channel')->with('single')->andReturn($logger);
+    Http::fake([
+        'api.telegram.org/*' => Http::sequence()
+            ->push('', 500)
+            ->push('', 500)
+            ->push('', 500),
+    ]);
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    Http::assertSentCount(3);
+});
+
+it('logs warning when all retries exhausted on network exception', function (): void {
+    Sleep::fake();
+    $logger = Mockery::mock();
+    $logger->shouldReceive('warning')->once();
+    Log::shouldReceive('channel')->with('single')->andReturn($logger);
+    Http::fake(fn () => throw new RuntimeException('Connection failed'));
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+});
+
+it('logs warning when 429 exhausts retries', function (): void {
+    Sleep::fake();
+    $logger = Mockery::mock();
+    $logger->shouldReceive('warning')->once();
+    Log::shouldReceive('channel')->with('single')->andReturn($logger);
+    Http::fake([
+        'api.telegram.org/*' => Http::sequence()
+            ->push('', 429, ['Retry-After' => '1'])
+            ->push('', 429, ['Retry-After' => '1'])
+            ->push('', 429, ['Retry-After' => '1']),
+    ]);
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    Http::assertSentCount(3);
+});
+
+it('caps retry-after at 5 seconds', function (): void {
+    Sleep::fake();
+    Http::fake([
+        'api.telegram.org/*' => Http::sequence()
+            ->push('', 429, ['Retry-After' => '30'])
+            ->push('', 200),
+    ]);
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    Sleep::assertSequence([Sleep::for(5)->seconds()]);
+});
+
+it('dispatches a job via sendQueued', function (): void {
+    Queue::fake();
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->sendQueued('Hello from queue');
+
+    Queue::assertPushed(
+        SendTelegramMessageJob::class,
+        fn (SendTelegramMessageJob $job): bool => $job->text === 'Hello from queue',
+    );
+});
+
+it('sendQueued is a no-op when not configured', function (): void {
+    Queue::fake();
+
+    $client = new TelegramClient(token: '', chatId: '');
+    $client->sendQueued('Hello');
+
+    Queue::assertNothingPushed();
 });
 
 it('reports configured when both token and chat id are set', function (): void {

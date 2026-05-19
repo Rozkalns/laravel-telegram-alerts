@@ -25,6 +25,7 @@ final class TelegramAlertsServiceProvider extends ServiceProvider
         $this->app->singleton(TelegramClient::class, fn (): TelegramClient => new TelegramClient(
             token: config()->string('telegram-alerts.bot_token'),
             chatId: config()->string('telegram-alerts.chat_id'),
+            maxAttempts: config()->integer('telegram-alerts.retry_attempts', 3),
         ));
 
         config()->set('logging.channels.telegram', [

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Rozkalns\TelegramAlerts\TelegramClient;
 
 #[Signature('telegram:heartbeat')]
-#[Description('Send a Telegram heartbeat to confirm the scheduler is running')]
+#[Description('Send a Telegram alert when there are pending or failed queue jobs')]
 final class HeartbeatCommand extends Command
 {
     public function __construct(
@@ -37,6 +37,10 @@ final class HeartbeatCommand extends Command
         $pendingJobs = $this->pendingJobCount();
         $failedJobs = $this->failedJobCount();
 
+        if ($pendingJobs === 0 && $failedJobs === 0) {
+            return self::SUCCESS;
+        }
+
         $lines = [
             sprintf('💚 *[%s]* Heartbeat', $appName),
             '',
@@ -45,7 +49,7 @@ final class HeartbeatCommand extends Command
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
         ];
 
-        $this->client->send(implode("\n", $lines));
+        $this->client->sendQueued(implode("\n", $lines));
 
         return self::SUCCESS;
     }

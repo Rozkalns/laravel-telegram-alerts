@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
+use Rozkalns\TelegramAlerts\Jobs\SendTelegramMessageJob;
 use Rozkalns\TelegramAlerts\TelegramClient;
 
 beforeEach(function (): void {
-    Http::fake();
+    Queue::fake();
     Process::fake([
         'git log -1 --format="%h %s"' => Process::result('abc1234 Initial commit'),
     ]);
@@ -18,9 +19,12 @@ it('sends a deploy notification', function (): void {
         ->expectsOutputToContain('Deploy notification sent.')
         ->assertSuccessful();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'deployed')
-        && str_contains((string) $request['text'], 'TestApp')
-        && str_contains((string) $request['text'], 'abc1234'));
+    Queue::assertPushed(
+        SendTelegramMessageJob::class,
+        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, 'deployed')
+            && str_contains($job->text, 'TestApp')
+            && str_contains($job->text, 'abc1234'),
+    );
 });
 
 it('warns when not configured and sends nothing', function (): void {
@@ -34,5 +38,5 @@ it('warns when not configured and sends nothing', function (): void {
         ->expectsOutputToContain('Telegram not configured')
         ->assertSuccessful();
 
-    Http::assertNothingSent();
+    Queue::assertNothingPushed();
 });

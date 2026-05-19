@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use Rozkalns\TelegramAlerts\Jobs\SendTelegramMessageJob;
 use Rozkalns\TelegramAlerts\TelegramClient;
 
 beforeEach(function (): void {
-    Http::fake();
+    Queue::fake();
 });
 
 it('passes when no backup path is configured', function (): void {
@@ -15,7 +16,7 @@ it('passes when no backup path is configured', function (): void {
     $this->artisan('telegram:check-backup')
         ->assertSuccessful();
 
-    Http::assertNothingSent();
+    Queue::assertNothingPushed();
 });
 
 it('passes when backup file exists and is recent', function (): void {
@@ -30,7 +31,7 @@ it('passes when backup file exists and is recent', function (): void {
         ->expectsOutputToContain('Backup check passed')
         ->assertSuccessful();
 
-    Http::assertNothingSent();
+    Queue::assertNothingPushed();
 
     unlink($dir.'/database.sqlite');
     rmdir($dir);
@@ -42,8 +43,11 @@ it('alerts when no backup files found', function (): void {
     $this->artisan('telegram:check-backup')
         ->assertFailed();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Backup check failed')
-        && str_contains((string) $request['text'], 'No backup files found'));
+    Queue::assertPushed(
+        SendTelegramMessageJob::class,
+        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, 'Backup check failed')
+            && str_contains($job->text, 'No backup files found'),
+    );
 });
 
 it('alerts when backup is too old', function (): void {
@@ -58,8 +62,11 @@ it('alerts when backup is too old', function (): void {
     $this->artisan('telegram:check-backup')
         ->assertFailed();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Backup check failed')
-        && str_contains((string) $request['text'], 'No backup file modified'));
+    Queue::assertPushed(
+        SendTelegramMessageJob::class,
+        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, 'Backup check failed')
+            && str_contains($job->text, 'No backup file modified'),
+    );
 
     unlink($dir.'/database.sqlite');
     rmdir($dir);
@@ -77,8 +84,11 @@ it('alerts when backup is suspiciously small', function (): void {
     $this->artisan('telegram:check-backup')
         ->assertFailed();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Backup check failed')
-        && str_contains((string) $request['text'], 'suspiciously small'));
+    Queue::assertPushed(
+        SendTelegramMessageJob::class,
+        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, 'Backup check failed')
+            && str_contains($job->text, 'suspiciously small'),
+    );
 
     unlink($dir.'/database.sqlite');
     rmdir($dir);
@@ -96,7 +106,7 @@ it('supports glob patterns', function (): void {
         ->expectsOutputToContain('Backup check passed')
         ->assertSuccessful();
 
-    Http::assertNothingSent();
+    Queue::assertNothingPushed();
 
     unlink($dir.'/database.backup-20260519.sqlite');
     rmdir($dir);
@@ -109,7 +119,7 @@ it('rejects paths with directory traversal', function (): void {
         ->expectsOutputToContain('must not contain')
         ->assertFailed();
 
-    Http::assertNothingSent();
+    Queue::assertNothingPushed();
 });
 
 it('is a no-op when client is not configured', function (): void {
@@ -123,5 +133,5 @@ it('is a no-op when client is not configured', function (): void {
     $this->artisan('telegram:check-backup')
         ->assertSuccessful();
 
-    Http::assertNothingSent();
+    Queue::assertNothingPushed();
 });

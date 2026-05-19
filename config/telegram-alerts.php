@@ -24,4 +24,6 @@ return [
 
     'backup_min_size_bytes' => 1024,
 
+    'retry_attempts' => (int) env('TELEGRAM_RETRY_ATTEMPTS', 3),
+
 ];

@@ -108,7 +108,7 @@ final class CheckBackupCommand extends Command
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
         ];
 
-        $this->client->send(implode("\n", $lines));
+        $this->client->sendQueued(implode("\n", $lines));
         $this->error('Backup check failed — Telegram alert sent.');
     }
 

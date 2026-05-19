@@ -42,7 +42,7 @@ final class NotifyDeployCommand extends Command
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
         ]);
 
-        $this->client->send($text);
+        $this->client->sendQueued($text);
 
         $this->info('Deploy notification sent.');
 
