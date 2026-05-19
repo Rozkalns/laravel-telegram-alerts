@@ -12,11 +12,11 @@ return [
 
     'queue_failures' => true,
 
-    'slow_response_threshold' => 0,
+    'slow_response_threshold' => (int) env('TELEGRAM_SLOW_RESPONSE_THRESHOLD', 0),
 
     'slow_response_exclude' => ['/health', '/up'],
 
-    'scheduler_heartbeat' => false,
+    'scheduler_heartbeat' => (bool) env('TELEGRAM_SCHEDULER_HEARTBEAT', false),
 
     'backup_path' => env('TELEGRAM_BACKUP_PATH', ''),
 
