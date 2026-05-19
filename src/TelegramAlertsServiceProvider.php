@@ -9,7 +9,6 @@ use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\ServiceProvider;
-use Monolog\Logger;
 use Rozkalns\TelegramAlerts\Commands\CheckBackupCommand;
 use Rozkalns\TelegramAlerts\Commands\HeartbeatCommand;
 use Rozkalns\TelegramAlerts\Commands\NotifyDeployCommand;
@@ -30,9 +29,7 @@ final class TelegramAlertsServiceProvider extends ServiceProvider
 
         config()->set('logging.channels.telegram', [
             'driver' => 'custom',
-            'via' => fn (): Logger => new Logger('telegram', [
-                $this->app->make(TelegramHandler::class),
-            ]),
+            'via' => TelegramLogChannel::class,
             'level' => config()->string('telegram-alerts.log_level', 'error'),
         ]);
     }
