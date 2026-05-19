@@ -7,25 +7,29 @@ namespace Rozkalns\TelegramAlerts\Commands;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Rozkalns\TelegramAlerts\TelegramClient;
 
 #[Signature('telegram:notify-deploy')]
 #[Description('Send a Telegram notification after a successful deploy')]
 final class NotifyDeployCommand extends Command
 {
+    public function __construct(
+        private readonly TelegramClient $client,
+    ) {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
-        $token = config()->string('telegram-alerts.bot_token');
-        $chatId = config()->string('telegram-alerts.chat_id');
-
-        if ($token === '' || $chatId === '') {
+        if (! $this->client->isConfigured()) {
             $this->warn('Telegram not configured — skipping notification.');
 
             return self::SUCCESS;
         }
 
         $appName = config()->string('app.name', 'Laravel');
+        $appEnv = config()->string('app.env', 'production');
         $appUrl = config()->string('app.url');
         $commit = trim(Process::run('git log -1 --format="%h %s"')->output());
 
@@ -34,16 +38,11 @@ final class NotifyDeployCommand extends Command
             '',
             sprintf('`%s`', $commit),
             '',
-            sprintf('📍 %s', $appUrl),
+            sprintf('📍 %s (%s)', $appUrl, $appEnv),
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
         ]);
 
-        Http::timeout(5)->post(sprintf('https://api.telegram.org/bot%s/sendMessage', $token), [
-            'chat_id' => $chatId,
-            'text' => $text,
-            'parse_mode' => 'Markdown',
-            'disable_web_page_preview' => true,
-        ]);
+        $this->client->send($text);
 
         $this->info('Deploy notification sent.');
 

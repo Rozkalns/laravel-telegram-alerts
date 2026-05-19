@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Rozkalns\TelegramAlerts;
 
-use Illuminate\Support\Facades\Http;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -13,8 +12,7 @@ use Throwable;
 final class TelegramHandler extends AbstractProcessingHandler
 {
     public function __construct(
-        private readonly string $token,
-        private readonly string $chatId,
+        private readonly TelegramClient $client,
         int|string|Level $level = Level::Error,
         bool $bubble = true,
     ) {
@@ -23,7 +21,7 @@ final class TelegramHandler extends AbstractProcessingHandler
 
     protected function write(LogRecord $record): void
     {
-        if ($this->token === '' || $this->chatId === '') {
+        if (! $this->client->isConfigured()) {
             return;
         }
 
@@ -37,7 +35,6 @@ final class TelegramHandler extends AbstractProcessingHandler
         $appName = config()->string('app.name', 'Laravel');
         $appEnv = config()->string('app.env', 'production');
         $appUrl = config()->string('app.url');
-        $level = $record->level->name;
 
         $message = $record->message;
         if (mb_strlen($message) > 3000) {
@@ -45,7 +42,7 @@ final class TelegramHandler extends AbstractProcessingHandler
         }
 
         $lines = [
-            sprintf('🚨 *[%s]* %s', $appName, $level),
+            sprintf('🚨 *[%s]* %s', $appName, $record->level->name),
             '',
             sprintf('`%s`', $message),
         ];
@@ -62,13 +59,6 @@ final class TelegramHandler extends AbstractProcessingHandler
         $lines[] = sprintf('📍 %s (%s)', $appUrl, $appEnv);
         $lines[] = '🕐 '.$record->datetime->format('Y-m-d H:i:s T');
 
-        $text = implode("\n", $lines);
-
-        rescue(fn () => Http::timeout(5)->post(sprintf('https://api.telegram.org/bot%s/sendMessage', $this->token), [
-            'chat_id' => $this->chatId,
-            'text' => $text,
-            'parse_mode' => 'Markdown',
-            'disable_web_page_preview' => true,
-        ]));
+        $this->client->send(implode("\n", $lines));
     }
 }

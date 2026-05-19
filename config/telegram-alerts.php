@@ -8,4 +8,20 @@ return [
 
     'chat_id' => env('TELEGRAM_CHAT_ID', ''),
 
+    'log_level' => env('TELEGRAM_LOG_LEVEL', 'error'),
+
+    'queue_failures' => true,
+
+    'slow_response_threshold' => 0,
+
+    'slow_response_exclude' => ['/health', '/up'],
+
+    'scheduler_heartbeat' => false,
+
+    'backup_path' => env('TELEGRAM_BACKUP_PATH', ''),
+
+    'backup_max_age_hours' => 25,
+
+    'backup_min_size_bytes' => 1024,
+
 ];
