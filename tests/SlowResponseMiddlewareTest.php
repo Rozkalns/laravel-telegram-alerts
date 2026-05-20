@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
@@ -90,6 +91,17 @@ it('rate limits alerts per path', function (): void {
     $this->get('/test-ratelimit')->assertOk();
 
     Http::assertSentCount(1);
+});
+
+it('skips when start timestamp is missing', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    $middleware = app(SlowResponseMiddleware::class);
+    $request = Request::create('/test-no-start');
+
+    $middleware->terminate($request);
+
+    Http::assertNothingSent();
 });
 
 it('is a no-op when client is not configured', function (): void {

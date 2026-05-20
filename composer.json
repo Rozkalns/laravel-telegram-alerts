@@ -62,7 +62,7 @@
         "test:type-coverage": "pest --type-coverage --exactly=100",
         "test:typos": "peck",
         "test:lint": "pint --test",
-        "test:unit": "pest --coverage --exactly=100",
+        "test:unit": "XDEBUG_MODE=coverage pest --coverage --exactly=100",
         "test:types": "phpstan",
         "test:refactor": "rector --dry-run",
         "test": [

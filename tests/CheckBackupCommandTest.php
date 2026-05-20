@@ -122,6 +122,66 @@ it('rejects paths with directory traversal', function (): void {
     Queue::assertNothingPushed();
 });
 
+it('formats age as minutes when under one hour', function (): void {
+    $dir = sys_get_temp_dir().'/telegram-backup-test-'.uniqid();
+    mkdir($dir, 0755, true);
+    file_put_contents($dir.'/database.sqlite', str_repeat('x', 2048));
+    touch($dir.'/database.sqlite', time() - (26 * 60));
+
+    config()->set('telegram-alerts.backup_path', $dir.'/database.sqlite');
+    config()->set('telegram-alerts.backup_max_age_hours', 0);
+
+    $this->artisan('telegram:check-backup')
+        ->assertFailed();
+
+    Queue::assertPushed(
+        SendTelegramMessageJob::class,
+        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, 'min'),
+    );
+
+    unlink($dir.'/database.sqlite');
+    rmdir($dir);
+});
+
+it('formats age as hours when under one day', function (): void {
+    $dir = sys_get_temp_dir().'/telegram-backup-test-'.uniqid();
+    mkdir($dir, 0755, true);
+    file_put_contents($dir.'/database.sqlite', str_repeat('x', 2048));
+    touch($dir.'/database.sqlite', time() - (5 * 3600));
+
+    config()->set('telegram-alerts.backup_path', $dir.'/database.sqlite');
+    config()->set('telegram-alerts.backup_max_age_hours', 1);
+
+    $this->artisan('telegram:check-backup')
+        ->assertFailed();
+
+    Queue::assertPushed(
+        SendTelegramMessageJob::class,
+        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, '5h'),
+    );
+
+    unlink($dir.'/database.sqlite');
+    rmdir($dir);
+});
+
+it('alerts when backup file timestamps are unreadable', function (): void {
+    $dir = sys_get_temp_dir().'/telegram-backup-test-'.uniqid();
+    mkdir($dir, 0755, true);
+
+    config()->set('telegram-alerts.backup_path', $dir.'/*.sqlite');
+
+    file_put_contents($dir.'/test.sqlite', str_repeat('x', 2048));
+    touch($dir.'/test.sqlite', 0);
+
+    $this->artisan('telegram:check-backup')
+        ->assertFailed();
+
+    Queue::assertPushed(SendTelegramMessageJob::class);
+
+    unlink($dir.'/test.sqlite');
+    rmdir($dir);
+});
+
 it('is a no-op when client is not configured', function (): void {
     config()->set('telegram-alerts.backup_path', '/tmp/nonexistent-backup-*.sqlite');
     config()->set('telegram-alerts.bot_token', '');
