@@ -41,10 +41,10 @@ it('sends alert when response exceeds threshold', function (): void {
         return 'ok';
     });
 
-    $this->get('/test-slow')->assertOk();
+    $this->get('/test-slow?foo=bar')->assertOk();
 
     Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Slow response')
-        && str_contains((string) $request['text'], 'test-slow')
+        && str_contains((string) $request['text'], '/test-slow?foo=bar')
         && str_contains((string) $request['text'], 'TestApp'));
 });
 
@@ -78,7 +78,7 @@ it('skips excluded paths', function (): void {
     Http::assertNothingSent();
 });
 
-it('rate limits alerts per path', function (): void {
+it('rate limits alerts per path and query string', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
     Route::middleware(SlowResponseMiddleware::class)->get('/test-ratelimit', function (): string {
@@ -87,10 +87,25 @@ it('rate limits alerts per path', function (): void {
         return 'ok';
     });
 
-    $this->get('/test-ratelimit')->assertOk();
-    $this->get('/test-ratelimit')->assertOk();
+    $this->get('/test-ratelimit?a=1')->assertOk();
+    $this->get('/test-ratelimit?a=1')->assertOk();
 
     Http::assertSentCount(1);
+});
+
+it('sends separate alerts for different query strings', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-qs', function (): string {
+        usleep(80_000);
+
+        return 'ok';
+    });
+
+    $this->get('/test-qs?a=1')->assertOk();
+    $this->get('/test-qs?a=2')->assertOk();
+
+    Http::assertSentCount(2);
 });
 
 it('skips when start timestamp is missing', function (): void {
