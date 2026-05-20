@@ -55,7 +55,7 @@ final readonly class SlowResponseMiddleware
             return;
         }
 
-        $cacheKey = 'telegram_slow_'.md5($request->method().$request->path());
+        $cacheKey = 'telegram_slow_'.md5($request->method().$request->getRequestUri());
         if (cache()->has($cacheKey)) {
             return;
         }
@@ -72,7 +72,7 @@ final readonly class SlowResponseMiddleware
         $lines = [
             sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
             '',
-            sprintf('`%s /%s`', $request->method(), $request->path()),
+            sprintf('`%s %s`', $request->method(), $request->getRequestUri()),
             sprintf('`%s`', $action),
             '',
             sprintf('⏱️ %s ms (threshold: %s ms)', number_format($elapsedMs), number_format($thresholdMs)),
