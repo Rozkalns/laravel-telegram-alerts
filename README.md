@@ -136,7 +136,7 @@ TELEGRAM_BACKUP_PATH=/path/to/backups/database.backup-*.sqlite
 ```
 🐌 [MyApp] Slow response (3.2s)
 
-`GET /students/123/observations`
+`GET /students/123/observations?semester=2026-spring`
 `App\Http\Controllers\ObservationController@index`
 
 ⏱️ 3,200 ms (threshold: 2,000 ms)
@@ -222,7 +222,7 @@ All Telegram sends go through a shared `TelegramClient`:
 Rate limiting uses the cache to deduplicate:
 - Error logs: 1 per unique message per 60 seconds
 - Queue failures: 1 per unique job+exception per 60 seconds
-- Slow responses: 1 per unique path per 5 minutes
+- Slow responses: 1 per unique path+query per 5 minutes
 - If cache is unavailable, rate limiting is skipped and messages send anyway
 
 Scheduled commands (heartbeat, backup verification) are auto-registered via the service provider when enabled in config. They use `callAfterResolving(Schedule::class)` — no changes to your `routes/console.php` needed.
