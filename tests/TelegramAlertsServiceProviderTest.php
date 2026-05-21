@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Http\Request;
+use Rozkalns\TelegramAlerts\Http\CiWebhookController;
 use Rozkalns\TelegramAlerts\Middleware\SlowResponseMiddleware;
 use Rozkalns\TelegramAlerts\TelegramAlertsServiceProvider;
 use Rozkalns\TelegramAlerts\TelegramClient;
@@ -34,6 +36,15 @@ it('pushes slow response middleware when not running in console', function (): v
     $provider->boot();
 
     expect($kernel->hasMiddleware(SlowResponseMiddleware::class))->toBeTrue();
+});
+
+it('registers the ci webhook route', function (): void {
+    $routes = app('router')->getRoutes();
+    $route = $routes->match(
+        Request::create('/api/telegram-alerts/ci', 'POST'),
+    );
+
+    expect($route->getActionName())->toBe(CiWebhookController::class);
 });
 
 it('registers scheduled commands when config is enabled', function (): void {

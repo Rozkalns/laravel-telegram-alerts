@@ -2,6 +2,25 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.2.0
+
+### Added
+
+- **CI pipeline notifications** — new webhook endpoint `POST /api/telegram-alerts/ci` that CI pipelines can call with build results (status, branch, commit, actor, run URL). The package formats and sends a Telegram message using the existing bot ([#6](https://github.com/Rozkalns/laravel-telegram-alerts/issues/6))
+- **Setup command** — `php artisan telegram:ci-webhook-setup` generates a secure secret, writes to `.env`, sets GitHub repository secrets via `gh` CLI, and outputs a workflow snippet. Supports `--env` for GitHub environments and `--generate-workflow` for a standalone workflow file
+- **Bearer token middleware** — webhook endpoint is protected by a shared secret with timing-safe `hash_equals()` comparison
+- Config keys: `ci_webhook` (bool, default `false`) and `ci_webhook_secret` (string)
+
+### Upgrade notes
+
+No breaking changes. The webhook endpoint is disabled by default. To enable, run:
+
+```bash
+php artisan telegram:ci-webhook-setup
+```
+
+Or manually set `TELEGRAM_CI_WEBHOOK=true` and `TELEGRAM_CI_WEBHOOK_SECRET` in your `.env`.
+
 ## v0.1.3
 
 ### Fixed

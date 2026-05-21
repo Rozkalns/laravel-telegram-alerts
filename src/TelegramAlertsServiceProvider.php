@@ -12,6 +12,7 @@ use Illuminate\Support\ServiceProvider;
 use Rozkalns\TelegramAlerts\Commands\CheckBackupCommand;
 use Rozkalns\TelegramAlerts\Commands\HeartbeatCommand;
 use Rozkalns\TelegramAlerts\Commands\NotifyDeployCommand;
+use Rozkalns\TelegramAlerts\Commands\SetupCiWebhookCommand;
 use Rozkalns\TelegramAlerts\Listeners\QueueFailureListener;
 use Rozkalns\TelegramAlerts\Middleware\SlowResponseMiddleware;
 
@@ -46,8 +47,11 @@ final class TelegramAlertsServiceProvider extends ServiceProvider
                 NotifyDeployCommand::class,
                 HeartbeatCommand::class,
                 CheckBackupCommand::class,
+                SetupCiWebhookCommand::class,
             ]);
         }
+
+        $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
 
         if (config()->boolean('telegram-alerts.queue_failures', true)) {
             Queue::failing(fn (JobFailed $event) => $this->app->make(QueueFailureListener::class)->handle($event));
