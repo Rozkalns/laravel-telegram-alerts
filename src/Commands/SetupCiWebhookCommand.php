@@ -15,33 +15,31 @@ final class SetupCiWebhookCommand extends Command
 {
     public function handle(): int
     {
-        $appEnv = config()->string('app.env', 'production');
-        if ($appEnv !== 'production') {
-            $this->warn(sprintf('Running in [%s] environment — APP_URL will be set from this environment.', $appEnv));
-            $this->warn(sprintf('APP_URL: %s', config()->string('app.url')));
-
-            if (! $this->confirm('Continue?')) {
-                return self::SUCCESS;
-            }
-        }
-
         $secret = bin2hex(random_bytes(32));
-
-        $this->writeEnvValue('TELEGRAM_CI_WEBHOOK', 'true');
-        $this->writeEnvValue('TELEGRAM_CI_WEBHOOK_SECRET', $secret);
-        $this->info('Written to .env: TELEGRAM_CI_WEBHOOK=true');
-        $this->info(sprintf('Written to .env: TELEGRAM_CI_WEBHOOK_SECRET=%s', $secret));
+        $githubConfigured = false;
 
         $repo = $this->detectGitHubRepo();
         if ($repo === '') {
             $this->warn('Could not detect GitHub remote — skipping GitHub secret setup.');
-            $this->warn('Set TELEGRAM_CI_WEBHOOK_SECRET manually in your CI environment.');
         } elseif (! $this->ghIsAvailable()) {
             $this->warn('gh CLI not found — skipping GitHub secret setup.');
             $this->warn('Install gh: https://cli.github.com then re-run this command.');
         } else {
             $this->setGitHubSecret('TELEGRAM_CI_WEBHOOK_SECRET', $secret, $repo);
             $this->setGitHubSecret('APP_URL', config()->string('app.url'), $repo);
+            $githubConfigured = true;
+        }
+
+        $this->writeEnvValue('TELEGRAM_CI_WEBHOOK', 'true');
+        $this->writeEnvValue('TELEGRAM_CI_WEBHOOK_SECRET', $secret);
+        $this->info('Written to .env: TELEGRAM_CI_WEBHOOK=true');
+        $this->info(sprintf('Written to .env: TELEGRAM_CI_WEBHOOK_SECRET=%s', $secret));
+
+        if ($githubConfigured) {
+            $this->newLine();
+            $this->warn('Add this to your production .env:');
+            $this->line('  TELEGRAM_CI_WEBHOOK=true');
+            $this->line(sprintf('  TELEGRAM_CI_WEBHOOK_SECRET=%s', $secret));
         }
 
         if ($this->option('generate-workflow')) {
