@@ -26,4 +26,8 @@ return [
 
     'retry_attempts' => (int) env('TELEGRAM_RETRY_ATTEMPTS', 3),
 
+    'ci_webhook' => (bool) env('TELEGRAM_CI_WEBHOOK', false),
+
+    'ci_webhook_secret' => env('TELEGRAM_CI_WEBHOOK_SECRET', ''),
+
 ];

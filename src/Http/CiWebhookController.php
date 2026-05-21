@@ -1,0 +1,53 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Rozkalns\TelegramAlerts\Http;
+
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Rozkalns\TelegramAlerts\TelegramClient;
+
+final readonly class CiWebhookController
+{
+    public function __construct(
+        private TelegramClient $client,
+    ) {}
+
+    public function __invoke(Request $request): JsonResponse
+    {
+        if (! config()->boolean('telegram-alerts.ci_webhook', false)) {
+            return response()->json(['ok' => false, 'error' => 'CI webhook disabled'], 503);
+        }
+
+        if (! $this->client->isConfigured()) {
+            return response()->json(['ok' => false, 'error' => 'Telegram not configured'], 503);
+        }
+
+        $status = $request->string('status')->toString();
+        $branch = $request->string('branch')->toString();
+        $commit = $request->string('commit')->toString();
+        $actor = $request->string('actor')->toString();
+        $runUrl = $request->string('run_url')->toString();
+
+        $emoji = $status === 'success' ? '✅' : '❌';
+        $label = $status === 'success' ? 'passed' : 'failed';
+        $appName = config()->string('app.name', 'Laravel');
+
+        $lines = [
+            sprintf('%s *[%s]* CI build %s', $emoji, $appName, $label),
+            '',
+            sprintf('Branch: `%s`', $branch !== '' ? $branch : 'unknown'),
+            sprintf('Commit: `%s`', $commit !== '' ? $commit : 'unknown'),
+            sprintf('Actor: `%s`', $actor !== '' ? $actor : 'unknown'),
+        ];
+
+        if ($runUrl !== '') {
+            $lines[] = sprintf('🔗 %s', $runUrl);
+        }
+
+        $this->client->send(implode("\n", $lines));
+
+        return response()->json(['ok' => true]);
+    }
+}

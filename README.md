@@ -10,6 +10,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **Slow response detection** — alerts when requests exceed a configurable duration threshold
 - **Scheduler heartbeat** — periodic ping to confirm your scheduler is alive
 - **Backup verification** — daily check that backup files exist and are recent
+- **CI pipeline notifications** — webhook endpoint for GitHub Actions (or any CI) to report build results
 - **Project identification** — `[APP_NAME]` prefix on every message, so one bot handles all your projects
 - **Rate limiting** — deduplication on all alert types to avoid notification storms
 - **Auto-registration** — everything registers itself via the service provider
@@ -91,6 +92,43 @@ TELEGRAM_SCHEDULER_HEARTBEAT=true
 TELEGRAM_BACKUP_PATH=/path/to/backups/database.backup-*.sqlite
 ```
 
+### 6. CI Pipeline Notifications (optional)
+
+Get Telegram alerts when your GitHub Actions workflows pass or fail — on any branch or PR.
+
+**One-command setup:**
+
+```bash
+php artisan telegram:ci-webhook-setup
+```
+
+This will:
+- Generate a secure webhook secret
+- Write `TELEGRAM_CI_WEBHOOK=true` and the secret to `.env`
+- Set `TELEGRAM_CI_WEBHOOK_SECRET` and `APP_URL` as GitHub repository secrets (requires `gh` CLI)
+- Output a workflow snippet to add to your GitHub Actions
+
+**Options:**
+
+```bash
+# Target a specific GitHub environment
+php artisan telegram:ci-webhook-setup --env=Testing
+
+# Generate a standalone workflow file at .github/workflows/telegram-ci.yml
+php artisan telegram:ci-webhook-setup --generate-workflow
+```
+
+The command is idempotent — re-running regenerates the secret and updates both `.env` and GitHub.
+
+**Manual setup** (if you prefer not to use the setup command):
+
+```env
+TELEGRAM_CI_WEBHOOK=true
+TELEGRAM_CI_WEBHOOK_SECRET=your-secret-here
+```
+
+Then add a step to your workflow that posts results to `POST /api/telegram-alerts/ci` with the `Authorization: Bearer <secret>` header.
+
 ## What You Get
 
 ### Error notification
@@ -166,6 +204,28 @@ Pattern: `/home/forge/myapp/db/database.backup-*.sqlite`
 🕐 2026-05-19 06:00:00 UTC
 ```
 
+### CI build passed
+
+```
+✅ [MyApp] CI build passed
+
+Branch: `feature/payments`
+Commit: `feat: add Stripe integration`
+Actor: `Rozkalns`
+🔗 https://github.com/org/repo/actions/runs/123
+```
+
+### CI build failed
+
+```
+❌ [MyApp] CI build failed
+
+Branch: `main`
+Commit: `fix: update validation rules`
+Actor: `Rozkalns`
+🔗 https://github.com/org/repo/actions/runs/456
+```
+
 ## Configuration
 
 Publish the config to customize:
@@ -196,6 +256,10 @@ return [
     'backup_path' => env('TELEGRAM_BACKUP_PATH', ''),
     'backup_max_age_hours' => 25,
     'backup_min_size_bytes' => 1024,
+
+    // CI webhook endpoint (disabled by default)
+    'ci_webhook' => false,
+    'ci_webhook_secret' => env('TELEGRAM_CI_WEBHOOK_SECRET', ''),
 ];
 ```
 
@@ -209,6 +273,7 @@ return [
 | Slow responses | **Off** | Set `slow_response_threshold` to ms value |
 | Heartbeat | **Off** | Set `scheduler_heartbeat` to `true` |
 | Backup verification | **Off** | Set `backup_path` to a file/glob pattern |
+| CI notifications | **Off** | `php artisan telegram:ci-webhook-setup` |
 
 ## How It Works
 
