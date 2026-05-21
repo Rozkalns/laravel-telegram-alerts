@@ -201,6 +201,9 @@ final class SetupCiWebhookCommand extends Command
                 workflows: {$workflowList}
                 types: [completed]
 
+            permissions:
+              actions: read
+
             jobs:
               notify:
                 runs-on: ubuntu-latest
