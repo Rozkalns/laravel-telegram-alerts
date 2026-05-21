@@ -14,13 +14,9 @@ afterEach(function (): void {
         unlink($this->envPath);
     }
 
-    $workflowPath = base_path('.github/workflows/telegram-ci.yml');
-    if (file_exists($workflowPath)) {
-        unlink($workflowPath);
-    }
-
     $workflowDir = base_path('.github/workflows');
     if (is_dir($workflowDir)) {
+        array_map(unlink(...), glob($workflowDir.'/*.yml') ?: []);
         @rmdir($workflowDir);
     }
 
@@ -142,7 +138,10 @@ it('writes workflow file with generate-workflow flag', function (): void {
 
 it('detects existing workflow names for generate-workflow', function (): void {
     $workflowDir = base_path('.github/workflows');
-    mkdir($workflowDir, 0755, true);
+    if (! is_dir($workflowDir)) {
+        mkdir($workflowDir, 0755, true);
+    }
+
     file_put_contents($workflowDir.'/tests.yml', "name: Tests\non: push\n");
     file_put_contents($workflowDir.'/deploy.yml', "name: Deploy\non: push\n");
     file_put_contents($workflowDir.'/telegram-ci.yml', "name: Old Notify\non: workflow_run\n");
@@ -158,10 +157,7 @@ it('detects existing workflow names for generate-workflow', function (): void {
     $content = file_get_contents($workflowDir.'/telegram-ci.yml');
     expect($content)->toContain('"Tests"')
         ->and($content)->toContain('"Deploy"')
-        ->and($content)->not->toContain('"Notify Telegram"');
-
-    unlink($workflowDir.'/tests.yml');
-    unlink($workflowDir.'/deploy.yml');
+        ->and($content)->not->toContain('workflows: ["Notify Telegram"');
 });
 
 it('warns when no existing workflows found for generate-workflow', function (): void {

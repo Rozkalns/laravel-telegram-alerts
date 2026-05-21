@@ -6,6 +6,8 @@ All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in 
 
 ### Fixed
 
+- Generated workflow waits for all workflows to complete before sending a single notification (instead of one per workflow)
+- Uses GitHub API to aggregate pass/fail status across all workflows for a commit
 - Generated workflow now detects existing workflow names instead of using unsupported `["*"]` wildcard in `workflow_run`
 - Added `--url` flag to specify production URL when running locally (e.g. `--url=https://myapp.com`)
 - Skips setting `APP_URL` GitHub secret when it looks like a localhost address, with instructions to re-run with `--url`
