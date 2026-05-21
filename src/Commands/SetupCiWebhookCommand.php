@@ -15,6 +15,16 @@ final class SetupCiWebhookCommand extends Command
 {
     public function handle(): int
     {
+        $appEnv = config()->string('app.env', 'production');
+        if ($appEnv !== 'production') {
+            $this->warn(sprintf('Running in [%s] environment — APP_URL will be set from this environment.', $appEnv));
+            $this->warn(sprintf('APP_URL: %s', config()->string('app.url')));
+
+            if (! $this->confirm('Continue?')) {
+                return self::SUCCESS;
+            }
+        }
+
         $secret = bin2hex(random_bytes(32));
 
         $this->writeEnvValue('TELEGRAM_CI_WEBHOOK', 'true');
