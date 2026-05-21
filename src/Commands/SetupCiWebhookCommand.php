@@ -205,14 +205,31 @@ final class SetupCiWebhookCommand extends Command
               notify:
                 runs-on: ubuntu-latest
                 steps:
-                  - name: Notify Telegram
+                  - name: Check if all workflows completed
+                    id: check
+                    env:
+                      GH_TOKEN: \${{ github.token }}
                     run: |
+                      SHA="\${{ github.event.workflow_run.head_sha }}"
+                      PENDING=\$(gh api "repos/\${{ github.repository }}/actions/runs?head_sha=\$SHA" \\
+                        --jq '[.workflow_runs[] | select(.name != "Notify Telegram" and (.status == "in_progress" or .status == "queued"))] | length')
+                      echo "pending=\$PENDING" >> "\$GITHUB_OUTPUT"
+
+                  - name: Notify Telegram
+                    if: steps.check.outputs.pending == '0'
+                    env:
+                      GH_TOKEN: \${{ github.token }}
+                    run: |
+                      SHA="\${{ github.event.workflow_run.head_sha }}"
+                      STATUS=\$(gh api "repos/\${{ github.repository }}/actions/runs?head_sha=\$SHA" \\
+                        --jq '[.workflow_runs[] | select(.name != "Notify Telegram") | .conclusion] | if any(. == "failure") then "failure" else "success" end')
+
                       jq -n \\
-                        --arg status "\${{ github.event.workflow_run.conclusion }}" \\
+                        --arg status "\$STATUS" \\
                         --arg branch "\${{ github.event.workflow_run.head_branch }}" \\
                         --arg commit "\${{ github.event.workflow_run.head_commit.message }}" \\
                         --arg actor "\${{ github.event.workflow_run.actor.login }}" \\
-                        --arg run_url "\${{ github.event.workflow_run.html_url }}" \\
+                        --arg run_url "https://github.com/\${{ github.repository }}/commit/\$SHA/checks" \\
                         '{status: \$status, branch: \$branch, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
                       curl -s -X POST "\${{ secrets.APP_URL }}/api/telegram-alerts/ci" \\
                         -H "Authorization: Bearer \${{ secrets.TELEGRAM_CI_WEBHOOK_SECRET }}" \\
