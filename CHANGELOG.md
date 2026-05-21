@@ -2,6 +2,12 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.2.1
+
+### Fixed
+
+- `telegram:ci-webhook-setup` now warns when run outside production, showing the `APP_URL` that will be pushed to GitHub secrets and asking for confirmation
+
 ## v0.2.0
 
 ### Added
