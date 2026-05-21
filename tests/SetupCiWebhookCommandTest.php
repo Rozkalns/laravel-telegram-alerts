@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
-    config()->set('app.env', 'production');
     $this->envPath = base_path('.env');
     file_put_contents($this->envPath, "APP_NAME=TestApp\n");
 });
@@ -188,29 +187,27 @@ it('reports error when gh secret set fails', function (): void {
         ->assertSuccessful();
 });
 
-it('warns when not running in production', function (): void {
-    config()->set('app.env', 'local');
+it('shows production env instructions when github secrets are set', function (): void {
+    Process::fake([
+        'git remote get-url origin' => Process::result('git@github.com:Rozkalns/my-app.git'),
+        'gh auth status' => Process::result(''),
+        'gh secret set *' => Process::result(''),
+    ]);
 
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('Add this to your production .env')
+        ->expectsOutputToContain('TELEGRAM_CI_WEBHOOK_SECRET=')
+        ->assertSuccessful();
+});
+
+it('does not show production env instructions without github', function (): void {
     Process::fake([
         'git remote get-url origin' => Process::result('', '', 1),
     ]);
 
     $this->artisan('telegram:ci-webhook-setup')
-        ->expectsOutputToContain('Running in [local] environment')
-        ->expectsConfirmation('Continue?', 'yes')
+        ->doesntExpectOutputToContain('Add this to your production .env')
         ->assertSuccessful();
-});
-
-it('aborts when user declines non-production warning', function (): void {
-    config()->set('app.env', 'local');
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsOutputToContain('Running in [local] environment')
-        ->expectsConfirmation('Continue?', 'no')
-        ->assertSuccessful();
-
-    $env = file_get_contents($this->envPath);
-    expect($env)->not->toContain('TELEGRAM_CI_WEBHOOK');
 });
 
 it('creates env file when it does not exist', function (): void {

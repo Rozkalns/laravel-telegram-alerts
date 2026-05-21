@@ -6,7 +6,8 @@ All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in 
 
 ### Fixed
 
-- `telegram:ci-webhook-setup` now warns when run outside production, showing the `APP_URL` that will be pushed to GitHub secrets and asking for confirmation
+- `telegram:ci-webhook-setup` now shows production `.env` instructions after setting GitHub secrets, so the same secret can be copied to the production server
+- Removed the environment guard — the command is designed to run locally (where `gh` is available) and outputs what to add to production
 
 ## v0.2.0
 
