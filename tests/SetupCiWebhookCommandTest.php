@@ -140,6 +140,45 @@ it('writes workflow file with generate-workflow flag', function (): void {
         ->and($content)->toContain('--data-binary @-');
 });
 
+it('detects existing workflow names for generate-workflow', function (): void {
+    $workflowDir = base_path('.github/workflows');
+    mkdir($workflowDir, 0755, true);
+    file_put_contents($workflowDir.'/tests.yml', "name: Tests\non: push\n");
+    file_put_contents($workflowDir.'/deploy.yml', "name: Deploy\non: push\n");
+    file_put_contents($workflowDir.'/telegram-ci.yml', "name: Old Notify\non: workflow_run\n");
+
+    Process::fake([
+        'git remote get-url origin' => Process::result('git@github.com:Rozkalns/my-app.git'),
+        'gh auth status' => Process::result(''),
+        'gh secret set *' => Process::result(''),
+    ]);
+
+    $this->artisan('telegram:ci-webhook-setup --generate-workflow')->assertSuccessful();
+
+    $content = file_get_contents($workflowDir.'/telegram-ci.yml');
+    expect($content)->toContain('"Tests"')
+        ->and($content)->toContain('"Deploy"')
+        ->and($content)->not->toContain('"Notify Telegram"');
+
+    unlink($workflowDir.'/tests.yml');
+    unlink($workflowDir.'/deploy.yml');
+});
+
+it('warns when no existing workflows found for generate-workflow', function (): void {
+    Process::fake([
+        'git remote get-url origin' => Process::result('git@github.com:Rozkalns/my-app.git'),
+        'gh auth status' => Process::result(''),
+        'gh secret set *' => Process::result(''),
+    ]);
+
+    $this->artisan('telegram:ci-webhook-setup --generate-workflow')
+        ->expectsOutputToContain('No existing workflows found')
+        ->assertSuccessful();
+
+    $content = file_get_contents(base_path('.github/workflows/telegram-ci.yml'));
+    expect($content)->toContain('# Update with your workflow names');
+});
+
 it('does not output snippet when generate-workflow is used', function (): void {
     Process::fake([
         'git remote get-url origin' => Process::result('git@github.com:Rozkalns/my-app.git'),
@@ -207,6 +246,32 @@ it('does not show production env instructions without github', function (): void
 
     $this->artisan('telegram:ci-webhook-setup')
         ->doesntExpectOutputToContain('Add this to your production .env')
+        ->assertSuccessful();
+});
+
+it('uses url flag for app url github secret', function (): void {
+    Process::fake([
+        'git remote get-url origin' => Process::result('git@github.com:Rozkalns/my-app.git'),
+        'gh auth status' => Process::result(''),
+        'gh secret set *' => Process::result(''),
+    ]);
+
+    $this->artisan('telegram:ci-webhook-setup --url=https://myapp.com')
+        ->expectsOutputToContain('Set GitHub secret: APP_URL')
+        ->assertSuccessful();
+});
+
+it('skips app url when localhost detected', function (): void {
+    config()->set('app.url', 'http://localhost:8000');
+
+    Process::fake([
+        'git remote get-url origin' => Process::result('git@github.com:Rozkalns/my-app.git'),
+        'gh auth status' => Process::result(''),
+        'gh secret set *' => Process::result(''),
+    ]);
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('APP_URL looks like a local address')
         ->assertSuccessful();
 });
 

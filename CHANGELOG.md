@@ -2,6 +2,15 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.2.2
+
+### Fixed
+
+- Generated workflow now detects existing workflow names instead of using unsupported `["*"]` wildcard in `workflow_run`
+- Added `--url` flag to specify production URL when running locally (e.g. `--url=https://myapp.com`)
+- Skips setting `APP_URL` GitHub secret when it looks like a localhost address, with instructions to re-run with `--url`
+- Shows production `.env` instructions after setting GitHub secrets
+
 ## v0.2.1
 
 ### Fixed

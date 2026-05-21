@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
-#[Signature('telegram:ci-webhook-setup {--env= : GitHub environment for secrets (e.g. Testing)} {--generate-workflow : Write .github/workflows/telegram-ci.yml}')]
+#[Signature('telegram:ci-webhook-setup {--url= : Production APP_URL for GitHub secret} {--env= : GitHub environment for secrets (e.g. Testing)} {--generate-workflow : Write .github/workflows/telegram-ci.yml}')]
 #[Description('Generate a CI webhook secret, configure .env and GitHub secrets')]
 final class SetupCiWebhookCommand extends Command
 {
@@ -26,7 +26,11 @@ final class SetupCiWebhookCommand extends Command
             $this->warn('Install gh: https://cli.github.com then re-run this command.');
         } else {
             $this->setGitHubSecret('TELEGRAM_CI_WEBHOOK_SECRET', $secret, $repo);
-            $this->setGitHubSecret('APP_URL', config()->string('app.url'), $repo);
+            $appUrl = $this->resolveAppUrl();
+            if ($appUrl !== '') {
+                $this->setGitHubSecret('APP_URL', $appUrl, $repo);
+            }
+
             $githubConfigured = true;
         }
 
@@ -89,6 +93,24 @@ final class SetupCiWebhookCommand extends Command
         return '';
     }
 
+    private function resolveAppUrl(): string
+    {
+        $urlOption = $this->option('url');
+        if (is_string($urlOption) && $urlOption !== '') {
+            return $urlOption;
+        }
+
+        $configUrl = config()->string('app.url');
+        if ($configUrl !== '' && ! str_contains($configUrl, 'localhost')) {
+            return $configUrl;
+        }
+
+        $this->warn('APP_URL looks like a local address — skipping APP_URL GitHub secret.');
+        $this->warn('Re-run with --url=https://your-production-domain.com or set APP_URL manually in GitHub secrets.');
+
+        return '';
+    }
+
     private function ghIsAvailable(): bool
     {
         return Process::run('gh auth status')->successful();
@@ -123,20 +145,60 @@ final class SetupCiWebhookCommand extends Command
             mkdir($workflowDir, 0755, true);
         }
 
-        $workflow = $this->buildWorkflowContent();
+        $workflowNames = $this->detectWorkflowNames($workflowDir);
+        $workflow = $this->buildWorkflowContent($workflowNames);
         $path = $workflowDir.'/telegram-ci.yml';
         file_put_contents($path, $workflow);
         $this->info(sprintf('Written workflow: %s', $path));
+
+        if ($workflowNames === []) {
+            $this->warn('No existing workflows found — update the "workflows" list in telegram-ci.yml manually.');
+        }
     }
 
-    private function buildWorkflowContent(): string
+    /**
+     * @return list<string>
+     */
+    private function detectWorkflowNames(string $workflowDir): array
     {
-        return <<<'YAML'
+        $files = glob($workflowDir.'/*.{yml,yaml}', GLOB_BRACE | GLOB_NOSORT);
+        if ($files === false || $files === []) {
+            return [];
+        }
+
+        $names = [];
+        foreach ($files as $file) {
+            if (basename($file) === 'telegram-ci.yml') {
+                continue;
+            }
+
+            $contents = (string) file_get_contents($file);
+            if (preg_match('/^name:\s*["\']?(.+?)["\']?\s*$/m', $contents, $matches)) {
+                $names[] = $matches[1];
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param  list<string>  $workflowNames
+     */
+    private function buildWorkflowContent(array $workflowNames): string
+    {
+        if ($workflowNames === []) {
+            $workflowList = '["Tests"]  # Update with your workflow names';
+        } else {
+            $quoted = array_map(fn (string $name): string => sprintf('"%s"', $name), $workflowNames);
+            $workflowList = '['.implode(', ', $quoted).']';
+        }
+
+        return <<<YAML
             name: Notify Telegram
 
             on:
               workflow_run:
-                workflows: ["*"]
+                workflows: {$workflowList}
                 types: [completed]
 
             jobs:
@@ -145,16 +207,16 @@ final class SetupCiWebhookCommand extends Command
                 steps:
                   - name: Notify Telegram
                     run: |
-                      jq -n \
-                        --arg status "${{ github.event.workflow_run.conclusion }}" \
-                        --arg branch "${{ github.event.workflow_run.head_branch }}" \
-                        --arg commit "${{ github.event.workflow_run.head_commit.message }}" \
-                        --arg actor "${{ github.event.workflow_run.actor.login }}" \
-                        --arg run_url "${{ github.event.workflow_run.html_url }}" \
-                        '{status: $status, branch: $branch, commit: $commit, actor: $actor, run_url: $run_url}' | \
-                      curl -s -X POST "${{ secrets.APP_URL }}/api/telegram-alerts/ci" \
-                        -H "Authorization: Bearer ${{ secrets.TELEGRAM_CI_WEBHOOK_SECRET }}" \
-                        -H "Content-Type: application/json" \
+                      jq -n \\
+                        --arg status "\${{ github.event.workflow_run.conclusion }}" \\
+                        --arg branch "\${{ github.event.workflow_run.head_branch }}" \\
+                        --arg commit "\${{ github.event.workflow_run.head_commit.message }}" \\
+                        --arg actor "\${{ github.event.workflow_run.actor.login }}" \\
+                        --arg run_url "\${{ github.event.workflow_run.html_url }}" \\
+                        '{status: \$status, branch: \$branch, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
+                      curl -s -X POST "\${{ secrets.APP_URL }}/api/telegram-alerts/ci" \\
+                        -H "Authorization: Bearer \${{ secrets.TELEGRAM_CI_WEBHOOK_SECRET }}" \\
+                        -H "Content-Type: application/json" \\
                         --data-binary @-
 
             YAML;
