@@ -206,6 +206,8 @@ final class SetupCiWebhookCommand extends Command
                 runs-on: ubuntu-latest
                 steps:
                   - name: Notify Telegram
+                    env:
+                      COMMIT_MSG: \${{ github.event.head_commit.message }}
                     run: |
                       STATUS="\${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}"
                       FAILED=""
@@ -214,7 +216,7 @@ final class SetupCiWebhookCommand extends Command
                       jq -n \\
                         --arg status "\$STATUS" \\
                         --arg branch "\${{ github.ref_name }}" \\
-                        --arg commit "\${{ github.event.head_commit.message }}" \\
+                        --arg commit "\$COMMIT_MSG" \\
                         --arg actor "\${{ github.actor }}" \\
                         --arg run_url "https://github.com/\${{ github.repository }}/actions/runs/\${{ github.run_id }}" \\
                         '{status: \$status, branch: \$branch, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
