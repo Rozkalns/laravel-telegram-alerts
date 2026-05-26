@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Rozkalns\TelegramAlerts\Middleware\SlowResponseMiddleware;
@@ -136,4 +137,39 @@ it('is a no-op when client is not configured', function (): void {
     $this->get('/test-noconfig')->assertOk();
 
     Http::assertNothingSent();
+});
+
+it('includes db query stats in the alert', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('database.default', 'testing');
+    config()->set('database.connections.testing', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+    ]);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-db-stats', function (): string {
+        DB::statement('SELECT 1');
+        DB::statement('SELECT 2');
+        usleep(80_000);
+
+        return 'ok';
+    });
+
+    $this->get('/test-db-stats')->assertOk();
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '2 queries'));
+});
+
+it('omits db stats line when no queries are executed', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-no-queries', function (): string {
+        usleep(80_000);
+
+        return 'ok';
+    });
+
+    $this->get('/test-no-queries')->assertOk();
+
+    Http::assertSent(fn ($request): bool => ! str_contains((string) $request['text'], '🗄️'));
 });
