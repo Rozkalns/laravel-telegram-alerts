@@ -157,7 +157,30 @@ it('includes db query stats in the alert', function (): void {
 
     $this->get('/test-db-stats')->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '2 queries'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '2 queries ('));
+});
+
+it('deactivates db listener after handle completes', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('database.default', 'testing');
+    config()->set('database.connections.testing', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+    ]);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-deactivate', function (): string {
+        DB::statement('SELECT 1');
+        usleep(80_000);
+
+        return 'ok';
+    });
+
+    $this->get('/test-deactivate')->assertOk();
+
+    DB::statement('SELECT 1');
+    DB::statement('SELECT 1');
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '1 queries ('));
 });
 
 it('omits db stats line when no queries are executed', function (): void {
