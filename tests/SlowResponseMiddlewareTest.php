@@ -222,138 +222,138 @@ it('omits db stats line when no queries are executed', function (): void {
 it('shows livewire component and method for livewire requests', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test1/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', livewirePayload('competition-results', 'loadRankings'))
+    $this->postJson('/livewire-test1/update', livewirePayload('competition-results', 'loadRankings'))
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: competition-results::loadRankings')
-        && ! str_contains((string) $request['text'], '/livewire-abc12345/update'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: `competition-results::loadRankings`')
+        && ! str_contains((string) $request['text'], '/livewire-test1/update'));
 });
 
 it('defaults livewire method to __render when no calls present', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test2/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', livewirePayload('counter', null))
+    $this->postJson('/livewire-test2/update', livewirePayload('counter', null))
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: counter::__render'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: `counter::__render`'));
 });
 
 it('falls back to standard format for malformed livewire payload', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test3/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', ['_token' => 'csrf', 'components' => [['snapshot' => 'not-json']]])
+    $this->postJson('/livewire-test3/update', ['_token' => 'csrf', 'components' => [['snapshot' => 'not-json']]])
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-abc12345/update'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-test3/update'));
 });
 
 it('falls back to standard format when livewire components array is empty', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test4/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', ['_token' => 'csrf', 'components' => []])
+    $this->postJson('/livewire-test4/update', ['_token' => 'csrf', 'components' => []])
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-abc12345/update'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-test4/update'));
 });
 
 it('falls back to standard format when livewire component entry is not an array', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test5/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', ['_token' => 'csrf', 'components' => ['not-an-array']])
+    $this->postJson('/livewire-test5/update', ['_token' => 'csrf', 'components' => ['not-an-array']])
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-abc12345/update'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-test5/update'));
 });
 
 it('falls back to standard format when livewire snapshot is not a string', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test6/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', ['_token' => 'csrf', 'components' => [['snapshot' => 123, 'calls' => []]]])
+    $this->postJson('/livewire-test6/update', ['_token' => 'csrf', 'components' => [['snapshot' => 123, 'calls' => []]]])
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-abc12345/update'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-test6/update'));
 });
 
 it('falls back to standard format when livewire memo is not an array', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test7/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
     $snapshot = json_encode(['memo' => 'not-an-array', 'data' => []]);
-    $this->postJson('/livewire-abc12345/update', ['_token' => 'csrf', 'components' => [['snapshot' => $snapshot, 'calls' => []]]])
+    $this->postJson('/livewire-test7/update', ['_token' => 'csrf', 'components' => [['snapshot' => $snapshot, 'calls' => []]]])
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-abc12345/update'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-test7/update'));
 });
 
 it('falls back to standard format when livewire snapshot has no component name', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test8/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
     $snapshot = json_encode(['memo' => ['id' => 'abc'], 'data' => []]);
-    $this->postJson('/livewire-abc12345/update', ['_token' => 'csrf', 'components' => [['snapshot' => $snapshot, 'calls' => []]]])
+    $this->postJson('/livewire-test8/update', ['_token' => 'csrf', 'components' => [['snapshot' => $snapshot, 'calls' => []]]])
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-abc12345/update'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '/livewire-test8/update'));
 });
 
 it('rate limits livewire alerts by component and method', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test9/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', livewirePayload('counter', 'increment'))
+    $this->postJson('/livewire-test9/update', livewirePayload('counter', 'increment'))
         ->assertOk();
-    $this->postJson('/livewire-abc12345/update', livewirePayload('counter', 'increment'))
+    $this->postJson('/livewire-test9/update', livewirePayload('counter', 'increment'))
         ->assertOk();
 
     Http::assertSentCount(1);
@@ -362,15 +362,15 @@ it('rate limits livewire alerts by component and method', function (): void {
 it('sends separate livewire alerts for different components', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
-    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-abc12345/update', function (): string {
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-test10/update', function (): string {
         usleep(80_000);
 
         return 'ok';
     });
 
-    $this->postJson('/livewire-abc12345/update', livewirePayload('counter', 'increment'))
+    $this->postJson('/livewire-test10/update', livewirePayload('counter', 'increment'))
         ->assertOk();
-    $this->postJson('/livewire-abc12345/update', livewirePayload('user-profile', 'save'))
+    $this->postJson('/livewire-test10/update', livewirePayload('user-profile', 'save'))
         ->assertOk();
 
     Http::assertSentCount(2);
