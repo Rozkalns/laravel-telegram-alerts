@@ -26,6 +26,7 @@ final readonly class CiWebhookController
 
         $status = $request->string('status')->toString();
         $branch = $request->string('branch')->toString();
+        $sha = $request->string('sha')->toString();
         $commit = $request->string('commit')->toString();
         $actor = $request->string('actor')->toString();
         $runUrl = $request->string('run_url')->toString();
@@ -33,12 +34,20 @@ final readonly class CiWebhookController
         $emoji = $status === 'success' ? '✅' : '❌';
         $label = $status === 'success' ? 'passed' : 'failed';
         $appName = config()->string('app.name', 'Laravel');
+        $shortSha = $sha !== '' ? substr($sha, 0, 7) : '';
+
+        $commitLine = match (true) {
+            $shortSha !== '' && $commit !== '' => sprintf('`%s` %s', $shortSha, $commit),
+            $shortSha !== '' => sprintf('`%s`', $shortSha),
+            $commit !== '' => sprintf('`%s`', $commit),
+            default => '`unknown`',
+        };
 
         $lines = [
             sprintf('%s *[%s]* CI build %s', $emoji, $appName, $label),
             '',
             sprintf('Branch: `%s`', $branch !== '' ? $branch : 'unknown'),
-            sprintf('Commit: `%s`', $commit !== '' ? $commit : 'unknown'),
+            sprintf('Commit: %s', $commitLine),
             sprintf('Actor: `%s`', $actor !== '' ? $actor : 'unknown'),
         ];
 

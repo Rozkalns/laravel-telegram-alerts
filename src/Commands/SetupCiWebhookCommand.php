@@ -216,10 +216,11 @@ final class SetupCiWebhookCommand extends Command
                       jq -n \\
                         --arg status "\$STATUS" \\
                         --arg branch "\${{ github.ref_name }}" \\
+                        --arg sha "\${{ github.sha }}" \\
                         --arg commit "\$COMMIT_MSG" \\
                         --arg actor "\${{ github.actor }}" \\
                         --arg run_url "https://github.com/\${{ github.repository }}/actions/runs/\${{ github.run_id }}" \\
-                        '{status: \$status, branch: \$branch, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
+                        '{status: \$status, branch: \$branch, sha: \$sha, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
                       curl -s -X POST "\${{ secrets.APP_URL }}/api/telegram-alerts/ci" \\
                         -H "Authorization: Bearer \${{ secrets.TELEGRAM_CI_WEBHOOK_SECRET }}" \\
                         -H "Content-Type: application/json" \\
