@@ -2,6 +2,17 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.3.0
+
+### Added
+
+- **DB query stats in slow response alerts** — every slow response alert now includes the number of database queries and total query time (e.g. `🗄️ 47 queries (1,840 ms)`). Uses a lightweight `DB::listen()` counter with request-scoped deactivation to prevent listener accumulation in Octane/long-lived workers. The DB stats line is omitted when no queries were executed.
+- **Livewire component context** — when a slow request is a Livewire v4 update, the alert shows the component name and method (e.g. `Component: competition-results::loadRankings`) instead of the generic `/livewire-*/update` URL. Rate limiting uses `component::method` as the cache key so different components are tracked independently. Falls back to the standard URL format if the payload can't be parsed.
+
+### Upgrade notes
+
+No breaking changes, no new config keys. DB query stats are included automatically when `slow_response_threshold > 0`. Livewire enrichment activates automatically for Livewire v4 POST requests — no Livewire dependency is required (the payload is parsed as raw JSON).
+
 ## v0.2.2
 
 ### Fixed
