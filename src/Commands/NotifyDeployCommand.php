@@ -31,12 +31,19 @@ final class NotifyDeployCommand extends Command
         $appName = config()->string('app.name', 'Laravel');
         $appEnv = config()->string('app.env', 'production');
         $appUrl = config()->string('app.url');
-        $commit = trim(Process::run('git log -1 --format="%h %s"')->output());
+        $shortSha = trim(Process::run('git log -1 --format="%h"')->output());
+        $commitMsg = trim(Process::run('git log -1 --format="%s"')->output());
+
+        $commitLine = match (true) {
+            $shortSha !== '' && $commitMsg !== '' => sprintf('`%s` %s', $shortSha, $commitMsg),
+            $shortSha !== '' => sprintf('`%s`', $shortSha),
+            default => 'unknown',
+        };
 
         $text = implode("\n", [
             sprintf('✅ *[%s]* deployed', $appName),
             '',
-            sprintf('`%s`', $commit),
+            $commitLine,
             '',
             sprintf('📍 %s (%s)', $appUrl, $appEnv),
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),

@@ -46,12 +46,12 @@ final readonly class CiWebhookController
         $lines = [
             sprintf('%s *[%s]* CI build %s', $emoji, $appName, $label),
             '',
-            sprintf('Branch: `%s`', $branch !== '' ? $branch : 'unknown'),
-            sprintf('Commit: %s', $commitLine),
-            sprintf('Actor: `%s`', $actor !== '' ? $actor : 'unknown'),
+            $commitLine,
+            sprintf('Branch: `%s` · Actor: `%s`', $branch !== '' ? $branch : 'unknown', $actor !== '' ? $actor : 'unknown'),
         ];
 
         if ($runUrl !== '') {
+            $lines[] = '';
             $lines[] = sprintf('🔗 %s', $runUrl);
         }
 

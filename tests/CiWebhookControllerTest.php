@@ -55,9 +55,8 @@ it('sends success notification with correct emoji', function (): void {
 
     Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '✅')
         && str_contains((string) $request['text'], 'passed')
-        && str_contains((string) $request['text'], 'main')
         && str_contains((string) $request['text'], '`a6aa687` fix: tests')
-        && str_contains((string) $request['text'], 'Rozkalns')
+        && str_contains((string) $request['text'], 'Branch: `main` · Actor: `Rozkalns`')
         && str_contains((string) $request['text'], 'https://github.com/org/repo/actions/runs/123'));
 });
 
