@@ -105,11 +105,11 @@ final readonly class SlowResponseMiddleware
             $lines = [
                 sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
                 '',
-                sprintf('Component: %s::%s', $livewire['component'], $livewire['method']),
+                sprintf('Component: `%s::%s`', $livewire['component'], $livewire['method']),
                 '',
             ];
         } else {
-            $action = $request->route()->getActionName();
+            $action = $request->route()?->getActionName() ?? 'unknown';
 
             $lines = [
                 sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
@@ -133,7 +133,7 @@ final readonly class SlowResponseMiddleware
     /** @return array{component: string, method: string}|null */
     private function extractLivewireContext(Request $request): ?array
     {
-        if (! str_contains($request->path(), 'livewire') || ! $request->isMethod('POST')) {
+        if (! $request->isMethod('POST') || ! str_contains($request->path(), 'livewire') || ! str_ends_with($request->path(), '/update')) {
             return null;
         }
 
