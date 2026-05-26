@@ -109,7 +109,7 @@ final readonly class SlowResponseMiddleware
                 '',
             ];
         } else {
-            $action = $request->route()->getActionName();
+            $action = $request->route()?->getActionName() ?? 'unknown'; // @phpstan-ignore nullsafe.neverNull, nullCoalesce.expr
 
             $lines = [
                 sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
