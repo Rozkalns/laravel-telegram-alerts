@@ -27,12 +27,20 @@ final readonly class SlowResponseMiddleware
         $queryCount = 0;
         $queryTimeMs = 0.0;
 
-        DB::listen(function (QueryExecuted $query) use (&$queryCount, &$queryTimeMs): void {
+        $request->attributes->set('_telegram_listening', true);
+
+        DB::listen(function (QueryExecuted $query) use (&$queryCount, &$queryTimeMs, $request): void {
+            if (! $request->attributes->getBoolean('_telegram_listening')) {
+                return;
+            }
+
             $queryCount++;
             $queryTimeMs += $query->time;
         });
 
         $response = $next($request);
+
+        $request->attributes->set('_telegram_listening', false);
 
         $request->attributes->set('_telegram_query_count', $queryCount);
         $request->attributes->set('_telegram_query_time_ms', $queryTimeMs);
