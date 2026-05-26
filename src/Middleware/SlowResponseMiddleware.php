@@ -78,7 +78,13 @@ final readonly class SlowResponseMiddleware
             return;
         }
 
-        $cacheKey = 'telegram_slow_'.md5($request->method().$request->getRequestUri());
+        $livewire = $this->extractLivewireContext($request);
+
+        $cacheKeySuffix = $livewire !== null
+            ? $livewire['component'].'::'.$livewire['method']
+            : $request->method().$request->getRequestUri();
+        $cacheKey = 'telegram_slow_'.md5($cacheKeySuffix);
+
         if (cache()->has($cacheKey)) {
             return;
         }
@@ -90,19 +96,29 @@ final readonly class SlowResponseMiddleware
         $appUrl = config()->string('app.url');
 
         $seconds = number_format($elapsedMs / 1000, 1);
-        $action = $request->route()->getActionName();
 
         $queryCount = $request->attributes->getInt('_telegram_query_count');
         $rawQueryTimeMs = $request->attributes->get('_telegram_query_time_ms', 0.0);
         $queryTimeMs = (int) round(is_numeric($rawQueryTimeMs) ? (float) $rawQueryTimeMs : 0.0);
 
-        $lines = [
-            sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
-            '',
-            sprintf('`%s %s`', $request->method(), $request->getRequestUri()),
-            sprintf('`%s`', $action),
-            '',
-        ];
+        if ($livewire !== null) {
+            $lines = [
+                sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
+                '',
+                sprintf('Component: %s::%s', $livewire['component'], $livewire['method']),
+                '',
+            ];
+        } else {
+            $action = $request->route()->getActionName();
+
+            $lines = [
+                sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
+                '',
+                sprintf('`%s %s`', $request->method(), $request->getRequestUri()),
+                sprintf('`%s`', $action),
+                '',
+            ];
+        }
 
         if ($queryCount > 0) {
             $lines[] = sprintf('🗄️ %s queries (%s ms)', number_format($queryCount), number_format($queryTimeMs));
@@ -112,5 +128,53 @@ final readonly class SlowResponseMiddleware
         $lines[] = sprintf('📍 %s (%s)', $appUrl, $appEnv);
 
         $this->client->send(implode("\n", $lines));
+    }
+
+    /** @return array{component: string, method: string}|null */
+    private function extractLivewireContext(Request $request): ?array
+    {
+        if (! str_contains($request->path(), 'livewire') || ! $request->isMethod('POST')) {
+            return null;
+        }
+
+        $components = $request->input('components');
+        if (! is_array($components) || $components === []) {
+            return null;
+        }
+
+        $first = $components[0];
+        if (! is_array($first)) {
+            return null;
+        }
+
+        $rawSnapshot = $first['snapshot'] ?? '';
+        if (! is_string($rawSnapshot)) {
+            return null;
+        }
+
+        $snapshot = json_decode($rawSnapshot, true);
+        if (! is_array($snapshot)) {
+            return null;
+        }
+
+        $memo = $snapshot['memo'] ?? null;
+        if (! is_array($memo)) {
+            return null;
+        }
+
+        $component = $memo['name'] ?? null;
+        if (! is_string($component)) {
+            return null;
+        }
+
+        $calls = $first['calls'] ?? [];
+        $method = is_array($calls) && $calls !== []
+            ? (is_array($calls[0]) ? ($calls[0]['method'] ?? null) : null)
+            : null;
+
+        return [
+            'component' => $component,
+            'method' => is_string($method) ? $method : '__render',
+        ];
     }
 }
