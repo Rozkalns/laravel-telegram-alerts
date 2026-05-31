@@ -2,6 +2,12 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.5.1
+
+### Fixed
+
+- **Telegram messages no longer silently fail when content contains special characters.** Messages are now sent with `parse_mode=HTML` and every dynamic value (commit message, branch, actor, error text, file paths, job names, URLs) is HTML-escaped. Previously a value containing `_`, `*`, `` ` `` or `[` — e.g. a commit message mentioning `workflow_run` — made Telegram reject the whole message with HTTP 400 ("can't parse entities"); the failure was logged and swallowed, so the alert never arrived.
+
 ## v0.5.0
 
 ### Added
