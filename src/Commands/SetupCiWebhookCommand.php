@@ -180,7 +180,8 @@ final class SetupCiWebhookCommand extends Command
                       REPO: \${{ github.repository }}
                     run: |
                       jobs=\$(gh api "repos/\$REPO/actions/runs/\$RUN_ID/jobs" --paginate \\
-                        --jq '[.jobs[] | select(.started_at != null and .completed_at != null) | {name, conclusion, duration: ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))}]')
+                        --jq '.jobs[] | select(.started_at != null and .completed_at != null) | {name, conclusion, duration: ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))}' \\
+                        | jq -sc '.') || jobs='[]'
                       jq -n --argjson jobs "\$jobs" '{
                         status: (if env.STATUS == "success" then "success" else "failure" end),
                         branch: env.BRANCH,

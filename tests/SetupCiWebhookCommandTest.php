@@ -287,6 +287,8 @@ it('generates telegram-ci.yml from the detected workflow name', function (): voi
         ->and($content)->toContain('--argjson jobs')
         ->and($content)->toContain('jobs: $jobs')
         ->and($content)->toContain('curl -s -X POST "$APP_URL/api/telegram-alerts/ci"')
+        ->and($content)->toContain("| jq -sc '.') || jobs='[]'")
+        ->and($content)->toContain('select(.started_at != null and .completed_at != null)')
         ->and($content)->not->toContain('--arg status')
         ->and($content)->not->toContain('needs:');
 });
