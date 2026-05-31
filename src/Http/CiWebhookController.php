@@ -50,6 +50,21 @@ final readonly class CiWebhookController
             sprintf('Branch: `%s` · Actor: `%s`', $branch !== '' ? $branch : 'unknown', $actor !== '' ? $actor : 'unknown'),
         ];
 
+        $jobsLine = $this->buildJobsLine($request->input('jobs'));
+        $hasDuration = $request->has('duration');
+
+        if ($jobsLine !== '' || $hasDuration) {
+            $lines[] = '';
+
+            if ($jobsLine !== '') {
+                $lines[] = $jobsLine;
+            }
+
+            if ($hasDuration) {
+                $lines[] = sprintf('⏱️ total %s', $this->formatDuration($request->integer('duration')));
+            }
+        }
+
         if ($runUrl !== '') {
             $lines[] = '';
             $lines[] = sprintf('🔗 %s', $runUrl);
@@ -58,5 +73,53 @@ final readonly class CiWebhookController
         $this->client->send(implode("\n", $lines));
 
         return response()->json(['ok' => true]);
+    }
+
+    private function buildJobsLine(mixed $jobs): string
+    {
+        if (! is_array($jobs)) {
+            return '';
+        }
+
+        $parts = [];
+
+        foreach ($jobs as $job) {
+            if (! is_array($job)) {
+                continue;
+            }
+
+            $rawName = $job['name'] ?? '';
+            $name = is_string($rawName) ? $rawName : '';
+            if ($name === '') {
+                continue;
+            }
+
+            $rawConclusion = $job['conclusion'] ?? '';
+            $conclusion = is_string($rawConclusion) ? $rawConclusion : '';
+            $jobEmoji = $conclusion === 'success' ? '✅' : '❌';
+            $rawDuration = $job['duration'] ?? 0;
+            $parts[] = sprintf('%s %s %s', $name, $jobEmoji, $this->formatDuration(is_int($rawDuration) ? $rawDuration : 0));
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    private function formatDuration(int $seconds): string
+    {
+        if ($seconds < 60) {
+            return $seconds.'s';
+        }
+
+        $minutes = intdiv($seconds, 60);
+        $remSeconds = $seconds % 60;
+
+        if ($minutes < 60) {
+            return $remSeconds > 0 ? sprintf('%dm %ds', $minutes, $remSeconds) : sprintf('%dm', $minutes);
+        }
+
+        $hours = intdiv($minutes, 60);
+        $remMinutes = $minutes % 60;
+
+        return $remMinutes > 0 ? sprintf('%dh %dm', $hours, $remMinutes) : sprintf('%dh', $hours);
     }
 }
