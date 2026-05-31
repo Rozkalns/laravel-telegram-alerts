@@ -106,6 +106,8 @@ final readonly class CiWebhookController
 
     private function formatDuration(int $seconds): string
     {
+        $seconds = max(0, $seconds);
+
         if ($seconds < 60) {
             return $seconds.'s';
         }

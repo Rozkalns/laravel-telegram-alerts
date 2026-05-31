@@ -167,6 +167,19 @@ it('skips non-array entries within jobs array', function (): void {
     Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'build ✅ 5s'));
 });
 
+it('clamps negative durations to zero', function (): void {
+    ciPost([
+        'status' => 'success',
+        'duration' => -5,
+        'jobs' => [
+            ['name' => 'x', 'conclusion' => 'success', 'duration' => -3],
+        ],
+    ])->assertOk();
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'x ✅ 0s')
+        && str_contains((string) $request['text'], '⏱️ total 0s'));
+});
+
 it('formats durations across seconds, minutes, and hours', function (): void {
     ciPost([
         'status' => 'success',
