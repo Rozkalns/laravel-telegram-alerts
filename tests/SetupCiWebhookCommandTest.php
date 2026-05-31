@@ -278,9 +278,18 @@ it('generates telegram-ci.yml from the detected workflow name', function (): voi
         ->and($content)->toContain('workflow_run:')
         ->and($content)->toContain('workflows: ["CI"]')
         ->and($content)->toContain('types: [completed]')
+        ->and($content)->toContain('permissions:')
+        ->and($content)->toContain('actions: read')
+        ->and($content)->toContain('GH_TOKEN: ${{ github.token }}')
         ->and($content)->toContain('github.event.workflow_run.conclusion')
         ->and($content)->toContain('COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}')
+        ->and($content)->toContain('gh api "repos/$REPO/actions/runs/$RUN_ID/jobs"')
+        ->and($content)->toContain('--argjson jobs')
+        ->and($content)->toContain('jobs: $jobs')
         ->and($content)->toContain('curl -s -X POST "$APP_URL/api/telegram-alerts/ci"')
+        ->and($content)->toContain("| jq -sc '.') || jobs='[]'")
+        ->and($content)->toContain('select(.started_at != null and .completed_at != null)')
+        ->and($content)->not->toContain('--arg status')
         ->and($content)->not->toContain('needs:');
 });
 

@@ -156,12 +156,16 @@ final class SetupCiWebhookCommand extends Command
                 workflows: ["{$escapedName}"]
                 types: [completed]
 
+            permissions:
+              actions: read
+
             jobs:
               notify:
                 runs-on: ubuntu-latest
                 steps:
                   - name: Notify Telegram
                     env:
+                      GH_TOKEN: \${{ github.token }}
                       APP_URL: \${{ secrets.APP_URL }}
                       WEBHOOK_SECRET: \${{ secrets.TELEGRAM_CI_WEBHOOK_SECRET }}
                       STATUS: \${{ github.event.workflow_run.conclusion }}
@@ -170,17 +174,24 @@ final class SetupCiWebhookCommand extends Command
                       COMMIT_MSG: \${{ github.event.workflow_run.head_commit.message }}
                       ACTOR: \${{ github.event.workflow_run.actor.login }}
                       RUN_URL: \${{ github.event.workflow_run.html_url }}
+                      RUN_ID: \${{ github.event.workflow_run.id }}
+                      RUN_STARTED: \${{ github.event.workflow_run.run_started_at }}
+                      RUN_UPDATED: \${{ github.event.workflow_run.updated_at }}
+                      REPO: \${{ github.repository }}
                     run: |
-                      if [ "\$STATUS" != "success" ]; then STATUS="failure"; fi
-                      jq -n \\
-                        --arg status "\$STATUS" \\
-                        --arg branch "\$BRANCH" \\
-                        --arg sha "\$SHA" \\
-                        --arg commit "\$COMMIT_MSG" \\
-                        --arg actor "\$ACTOR" \\
-                        --arg run_url "\$RUN_URL" \\
-                        '{status: \$status, branch: \$branch, sha: \$sha, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
-                      curl -s -X POST "\$APP_URL/api/telegram-alerts/ci" \\
+                      jobs=\$(gh api "repos/\$REPO/actions/runs/\$RUN_ID/jobs" --paginate \\
+                        --jq '.jobs[] | select(.started_at != null and .completed_at != null) | {name, conclusion, duration: ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))}' \\
+                        | jq -sc '.') || jobs='[]'
+                      jq -n --argjson jobs "\$jobs" '{
+                        status: (if env.STATUS == "success" then "success" else "failure" end),
+                        branch: env.BRANCH,
+                        sha: env.SHA,
+                        commit: env.COMMIT_MSG,
+                        actor: env.ACTOR,
+                        run_url: env.RUN_URL,
+                        duration: ((env.RUN_UPDATED | fromdateiso8601) - (env.RUN_STARTED | fromdateiso8601)),
+                        jobs: \$jobs
+                      }' | curl -s -X POST "\$APP_URL/api/telegram-alerts/ci" \\
                         -H "Authorization: Bearer \$WEBHOOK_SECRET" \\
                         -H "Content-Type: application/json" \\
                         --data-binary @-

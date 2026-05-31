@@ -2,6 +2,24 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.5.0
+
+### Added
+
+- **Per-job breakdown and run timing in CI notifications.** Build notifications now list each CI job with its result and duration (e.g. `lint ✅ 23s · tests ✅ 1m 47s`) plus the total run time (`⏱️ total 2m 10s`).
+
+### Changed
+
+- The generated `telegram-ci.yml` is simpler — `jq` reads values from the environment directly (`env.*`) instead of repeating each value as a `--arg`.
+- The webhook payload gains two optional fields: `duration` (total run seconds) and `jobs` (array of `{name, conclusion, duration}`). Both are optional and backward-compatible — a workflow that omits them renders as before.
+- The generated workflow now requests `permissions: actions: read` and uses the built-in `GITHUB_TOKEN` to read per-job timings via one call to the run's jobs API.
+- **Dropped PHP 8.4 support — PHP 8.5+ only.** The minimum is now `^8.5.0`.
+- The package's own CI is consolidated into a single `CI` workflow with one job (running `composer test`) instead of separate `tests` (8.4/8.5 matrix) and `linter` workflows.
+
+### Upgrade notes
+
+Re-run `php artisan telegram:ci-webhook-setup` (or regenerate `.github/workflows/telegram-ci.yml`) to get the enriched workflow and the `actions: read` permission. No secret or `.env` changes. Existing v0.4.0 workflows keep working — they simply omit the new job/timing lines.
+
 ## v0.4.0
 
 ### Changed
