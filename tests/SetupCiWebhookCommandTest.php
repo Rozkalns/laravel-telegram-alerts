@@ -42,13 +42,18 @@ function fakeWithGithub(): void
     ]);
 }
 
-function createCiWorkflow(string $content = ''): string
+function workflowDir(): string
 {
     $dir = base_path('.github/workflows');
     if (! is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
 
+    return $dir;
+}
+
+function createCiWorkflow(string $content = '', string $filename = 'ci.yml'): string
+{
     if ($content === '') {
         $content = <<<'YAML'
             name: CI
@@ -60,15 +65,10 @@ function createCiWorkflow(string $content = ''): string
                 runs-on: ubuntu-latest
                 steps:
                   - run: echo "lint"
-
-              tests:
-                runs-on: ubuntu-latest
-                steps:
-                  - run: echo "tests"
             YAML;
     }
 
-    $path = $dir.'/ci.yml';
+    $path = workflowDir().'/'.$filename;
     file_put_contents($path, $content);
 
     return $path;
@@ -89,8 +89,7 @@ it('generates a new secret on first run', function (): void {
         ->expectsOutputToContain('Written to .env: TELEGRAM_CI_WEBHOOK_SECRET=')
         ->assertSuccessful();
 
-    $env = file_get_contents($this->envPath);
-    expect($env)->toContain('TELEGRAM_CI_WEBHOOK_SECRET=');
+    expect(file_get_contents($this->envPath))->toContain('TELEGRAM_CI_WEBHOOK_SECRET=');
 });
 
 it('prompts to regenerate when secret exists and user accepts', function (): void {
@@ -102,8 +101,7 @@ it('prompts to regenerate when secret exists and user accepts', function (): voi
         ->expectsOutputToContain('Written to .env: TELEGRAM_CI_WEBHOOK_SECRET=')
         ->assertSuccessful();
 
-    $env = file_get_contents($this->envPath);
-    expect($env)->not->toContain('old-secret');
+    expect(file_get_contents($this->envPath))->not->toContain('old-secret');
 });
 
 it('keeps existing secret when user declines regeneration', function (): void {
@@ -115,8 +113,7 @@ it('keeps existing secret when user declines regeneration', function (): void {
         ->expectsOutputToContain('Keeping existing webhook secret.')
         ->assertSuccessful();
 
-    $env = file_get_contents($this->envPath);
-    expect($env)->toContain('TELEGRAM_CI_WEBHOOK_SECRET=old-secret');
+    expect(file_get_contents($this->envPath))->toContain('TELEGRAM_CI_WEBHOOK_SECRET=old-secret');
 });
 
 it('replaces existing env values on re-run', function (): void {
@@ -139,9 +136,8 @@ it('creates env file when it does not exist', function (): void {
 
     $this->artisan('telegram:ci-webhook-setup')->assertSuccessful();
 
-    expect(file_exists($this->envPath))->toBeTrue();
-    $env = file_get_contents($this->envPath);
-    expect($env)->toContain('TELEGRAM_CI_WEBHOOK=true');
+    expect(file_exists($this->envPath))->toBeTrue()
+        ->and(file_get_contents($this->envPath))->toContain('TELEGRAM_CI_WEBHOOK=true');
 });
 
 it('sets github secrets when gh is available', function (): void {
@@ -255,190 +251,6 @@ it('warns when remote is not a github url', function (): void {
         ->assertSuccessful();
 });
 
-it('injects notify job into existing ci workflow', function (): void {
-    $ciPath = createCiWorkflow();
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsConfirmation('Add the notify job to .github/workflows/ci.yml?', 'yes')
-        ->expectsOutputToContain('Added notify job to .github/workflows/ci.yml (needs: [lint, tests]).')
-        ->assertSuccessful();
-
-    $content = file_get_contents($ciPath);
-    expect($content)->toContain('notify:')
-        ->and($content)->toContain('needs: [lint, tests]')
-        ->and($content)->toContain('if: always()')
-        ->and($content)->toContain('jq -n')
-        ->and($content)->toContain('/api/telegram-alerts/ci')
-        ->and($content)->toContain('TELEGRAM_CI_WEBHOOK_SECRET');
-});
-
-it('builds failed check lines for each job', function (): void {
-    createCiWorkflow();
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsConfirmation('Add the notify job to .github/workflows/ci.yml?', 'yes')
-        ->assertSuccessful();
-
-    $content = file_get_contents(base_path('.github/workflows/ci.yml'));
-    expect($content)->toContain('needs.lint.result')
-        ->and($content)->toContain('needs.tests.result')
-        ->and($content)->toContain('FAILED="lint"')
-        ->and($content)->toContain('${FAILED:+$FAILED, }tests');
-});
-
-it('handles single job in workflow', function (): void {
-    createCiWorkflow(<<<'YAML'
-        name: CI
-
-        on: [push]
-
-        jobs:
-          build:
-            runs-on: ubuntu-latest
-            steps:
-              - run: echo "build"
-        YAML);
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsConfirmation('Add the notify job to .github/workflows/ci.yml?', 'yes')
-        ->assertSuccessful();
-
-    $content = file_get_contents(base_path('.github/workflows/ci.yml'));
-    expect($content)->toContain('needs: [build]')
-        ->and($content)->toContain('FAILED="build"')
-        ->and($content)->not->toContain('${FAILED:+$FAILED, }');
-});
-
-it('warns and skips when notify job already exists', function (): void {
-    createCiWorkflow(<<<'YAML'
-        name: CI
-
-        on: [push]
-
-        jobs:
-          tests:
-            runs-on: ubuntu-latest
-            steps:
-              - run: echo "tests"
-
-          notify:
-            needs: [tests]
-            if: always()
-            runs-on: ubuntu-latest
-            steps:
-              - run: echo "notify"
-        YAML);
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsOutputToContain('A notify job already exists in .github/workflows/ci.yml')
-        ->assertSuccessful();
-});
-
-it('outputs snippet when user declines injection', function (): void {
-    createCiWorkflow();
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsConfirmation('Add the notify job to .github/workflows/ci.yml?', 'no')
-        ->expectsOutputToContain('Add this job to your CI workflow')
-        ->expectsOutputToContain('jq -n')
-        ->assertSuccessful();
-});
-
-it('outputs snippet when no ci workflow found', function (): void {
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsOutputToContain('No CI workflow file found')
-        ->expectsOutputToContain('Add this job to your CI workflow')
-        ->assertSuccessful();
-});
-
-it('outputs snippet when workflow dir exists but has no yaml files', function (): void {
-    $dir = base_path('.github/workflows');
-    if (! is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsOutputToContain('No CI workflow file found')
-        ->assertSuccessful();
-});
-
-it('warns about multiple workflow files', function (): void {
-    $dir = base_path('.github/workflows');
-    if (! is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-
-    file_put_contents($dir.'/tests.yml', "name: Tests\non: [push]\njobs:\n  tests:\n    runs-on: ubuntu-latest\n");
-    file_put_contents($dir.'/lint.yml', "name: Lint\non: [push]\njobs:\n  lint:\n    runs-on: ubuntu-latest\n");
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsOutputToContain('Multiple workflow files found')
-        ->expectsOutputToContain('Add this job to your CI workflow')
-        ->assertSuccessful();
-});
-
-it('uses ci-file option to target specific workflow', function (): void {
-    $dir = base_path('.github/workflows');
-    if (! is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-
-    file_put_contents($dir.'/tests.yml', "name: Tests\n\non: [push]\n\njobs:\n  tests:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo \"tests\"\n");
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup --ci-file=.github/workflows/tests.yml')
-        ->expectsConfirmation('Add the notify job to .github/workflows/tests.yml?', 'yes')
-        ->expectsOutputToContain('Added notify job to .github/workflows/tests.yml (needs: [tests]).')
-        ->assertSuccessful();
-
-    $content = file_get_contents($dir.'/tests.yml');
-    expect($content)->toContain('needs: [tests]');
-});
-
-it('warns when specified ci-file does not exist', function (): void {
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup --ci-file=.github/workflows/nonexistent.yml')
-        ->expectsOutputToContain('Specified CI file not found')
-        ->expectsOutputToContain('Add this job to your CI workflow')
-        ->assertSuccessful();
-});
-
-it('outputs snippet when workflow has no jobs section', function (): void {
-    createCiWorkflow("name: CI\non: [push]\n");
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsOutputToContain('Could not detect jobs')
-        ->expectsOutputToContain('Add this job to your CI workflow')
-        ->assertSuccessful();
-});
-
-it('detects single workflow file automatically', function (): void {
-    $dir = base_path('.github/workflows');
-    if (! is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-
-    file_put_contents($dir.'/pipeline.yml', "name: Pipeline\n\non: [push]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo \"build\"\n");
-    fakeNoGithub();
-
-    $this->artisan('telegram:ci-webhook-setup')
-        ->expectsConfirmation('Add the notify job to .github/workflows/pipeline.yml?', 'yes')
-        ->expectsOutputToContain('Added notify job to .github/workflows/pipeline.yml (needs: [build]).')
-        ->assertSuccessful();
-});
-
 it('writes env values on first run', function (): void {
     fakeNoGithub();
 
@@ -450,4 +262,125 @@ it('writes env values on first run', function (): void {
     $env = file_get_contents($this->envPath);
     expect($env)->toContain('TELEGRAM_CI_WEBHOOK=true')
         ->and($env)->toContain('TELEGRAM_CI_WEBHOOK_SECRET=');
+});
+
+it('generates telegram-ci.yml from the detected workflow name', function (): void {
+    createCiWorkflow();
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('Detected CI workflow "CI"')
+        ->expectsOutputToContain('Generated .github/workflows/telegram-ci.yml')
+        ->assertSuccessful();
+
+    $content = file_get_contents(base_path('.github/workflows/telegram-ci.yml'));
+    expect($content)->toStartWith('name: Telegram CI Notification')
+        ->and($content)->toContain('workflow_run:')
+        ->and($content)->toContain('workflows: ["CI"]')
+        ->and($content)->toContain('types: [completed]')
+        ->and($content)->toContain('github.event.workflow_run.conclusion')
+        ->and($content)->toContain('COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}')
+        ->and($content)->toContain('curl -s -X POST "$APP_URL/api/telegram-alerts/ci"')
+        ->and($content)->not->toContain('needs:');
+});
+
+it('reads the workflow name from a quoted name field', function (): void {
+    createCiWorkflow("name: \"My Pipeline\"\n\non: [push]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo build\n");
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toContain('workflows: ["My Pipeline"]');
+});
+
+it('defaults to CI when the workflow file has no name', function (): void {
+    createCiWorkflow("on: [push]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo build\n");
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('No "name:" found')
+        ->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toContain('workflows: ["CI"]');
+});
+
+it('honors the workflow-name override', function (): void {
+    createCiWorkflow();
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup --workflow-name=Build')
+        ->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toContain('workflows: ["Build"]');
+});
+
+it('uses ci-file option for name detection', function (): void {
+    createCiWorkflow("name: Tests\n\non: [push]\n\njobs:\n  tests:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo tests\n", 'tests.yml');
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup --ci-file=.github/workflows/tests.yml')
+        ->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toContain('workflows: ["Tests"]');
+});
+
+it('outputs the snippet when no ci workflow is found', function (): void {
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('Could not detect a CI workflow')
+        ->expectsOutputToContain('name: Telegram CI Notification')
+        ->assertSuccessful();
+
+    expect(file_exists(base_path('.github/workflows/telegram-ci.yml')))->toBeFalse();
+});
+
+it('warns when the specified ci-file does not exist', function (): void {
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup --ci-file=.github/workflows/nope.yml')
+        ->expectsOutputToContain('Specified CI file not found')
+        ->expectsOutputToContain('name: Telegram CI Notification')
+        ->assertSuccessful();
+});
+
+it('warns about multiple workflow files', function (): void {
+    createCiWorkflow("name: Tests\non: [push]\njobs:\n  t:\n    runs-on: ubuntu-latest\n", 'tests.yml');
+    createCiWorkflow("name: Lint\non: [push]\njobs:\n  l:\n    runs-on: ubuntu-latest\n", 'lint.yml');
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('Multiple workflow files found')
+        ->expectsOutputToContain('name: Telegram CI Notification')
+        ->assertSuccessful();
+});
+
+it('ignores its own telegram-ci.yml when detecting the source workflow', function (): void {
+    createCiWorkflow();
+    file_put_contents(base_path('.github/workflows/telegram-ci.yml'), "name: Telegram CI Notification\non: [workflow_run]\n");
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->doesntExpectOutputToContain('Multiple workflow files found')
+        ->expectsConfirmation('telegram-ci.yml already exists — overwrite it?', 'yes')
+        ->expectsOutputToContain('Generated .github/workflows/telegram-ci.yml')
+        ->assertSuccessful();
+});
+
+it('does not overwrite an existing telegram-ci.yml when declined', function (): void {
+    createCiWorkflow();
+    file_put_contents(base_path('.github/workflows/telegram-ci.yml'), "existing-content\n");
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsConfirmation('telegram-ci.yml already exists — overwrite it?', 'no')
+        ->expectsOutputToContain('name: Telegram CI Notification')
+        ->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toBe("existing-content\n");
 });
