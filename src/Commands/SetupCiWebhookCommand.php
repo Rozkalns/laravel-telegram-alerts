@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
-#[Signature('telegram:ci-webhook-setup {--url= : Production APP_URL for GitHub secret} {--env= : GitHub environment for secrets (e.g. Testing)} {--ci-file= : Path to CI workflow file (default: .github/workflows/ci.yml)}')]
+#[Signature('telegram:ci-webhook-setup {--url= : Production APP_URL for GitHub secret} {--env= : GitHub environment for secrets (e.g. Testing)} {--ci-file= : Path to CI workflow file used to detect the workflow name} {--workflow-name= : Override the CI workflow name to trigger on}')]
 #[Description('Generate a CI webhook secret, configure .env and GitHub secrets')]
 final class SetupCiWebhookCommand extends Command
 {
@@ -19,7 +19,6 @@ final class SetupCiWebhookCommand extends Command
         $this->newLine();
 
         $secret = $this->resolveSecret();
-        $githubConfigured = false;
 
         $repo = $this->detectGitHubRepo();
         if ($repo === '') {
@@ -33,8 +32,6 @@ final class SetupCiWebhookCommand extends Command
             if ($appUrl !== '') {
                 $this->setGitHubSecret('APP_URL', $appUrl, $repo);
             }
-
-            $githubConfigured = true;
         }
 
         $this->writeEnvValue('TELEGRAM_CI_WEBHOOK', 'true');
@@ -49,7 +46,7 @@ final class SetupCiWebhookCommand extends Command
         $this->line(sprintf('  2. Add to .env: TELEGRAM_CI_WEBHOOK_SECRET=%s', $maskedSecret));
         $this->line('  3. Run: php artisan config:cache');
 
-        $this->handleWorkflowInjection();
+        $this->handleWorkflowGeneration();
 
         return self::SUCCESS;
     }
@@ -84,48 +81,118 @@ final class SetupCiWebhookCommand extends Command
         return '';
     }
 
-    private function handleWorkflowInjection(): void
+    private function handleWorkflowGeneration(): void
     {
+        $override = $this->option('workflow-name');
+        $override = is_string($override) ? $override : '';
+
         $ciFile = $this->detectCiWorkflowFile();
 
-        if ($ciFile === '') {
+        if ($ciFile === '' && $override === '') {
             $this->newLine();
-            $this->warn('No CI workflow file found.');
-            $this->line('  Use --ci-file to specify your workflow, or add a notify job manually.');
-            $this->outputNotifySnippet(['lint', 'tests']);
+            $this->warn('Could not detect a CI workflow to trigger on.');
+            $this->line('  Re-run with --workflow-name=<your CI workflow name>, or add the file manually:');
+            $this->outputWorkflowSnippet('CI');
 
             return;
         }
 
-        $content = (string) file_get_contents($ciFile);
+        $workflowName = $override !== '' ? $override : $this->resolveWorkflowName($ciFile);
 
-        if ($this->hasExistingNotifyJob($content)) {
-            $this->newLine();
-            $this->info(sprintf('A notify job already exists in %s — skipping.', $this->relativePath($ciFile)));
+        $targetPath = base_path('.github/workflows/telegram-ci.yml');
 
-            return;
-        }
-
-        $jobNames = $this->parseJobNames($content);
-
-        if ($jobNames === []) {
-            $this->newLine();
-            $this->warn(sprintf('Could not detect jobs in %s.', $this->relativePath($ciFile)));
-            $this->outputNotifySnippet(['lint', 'tests']);
+        if (file_exists($targetPath) && ! $this->confirm('telegram-ci.yml already exists — overwrite it?', true)) {
+            $this->outputWorkflowSnippet($workflowName);
 
             return;
         }
 
-        if (! $this->confirm(sprintf('Add the notify job to %s?', $this->relativePath($ciFile)), true)) {
-            $this->outputNotifySnippet($jobNames);
-
-            return;
+        $dir = dirname($targetPath);
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
         }
 
-        $notifyBlock = $this->buildNotifyJob($jobNames);
-        file_put_contents($ciFile, rtrim($content, "\n")."\n\n".$notifyBlock."\n");
+        file_put_contents($targetPath, $this->buildNotifyWorkflow($workflowName)."\n");
+
         $this->newLine();
-        $this->info(sprintf('Added notify job to %s (needs: [%s]).', $this->relativePath($ciFile), implode(', ', $jobNames)));
+        $this->info(sprintf('Generated %s (triggers on workflow "%s").', $this->relativePath($targetPath), $workflowName));
+        $this->warn('Commit and merge it to your default branch — workflow_run only fires from the default branch.');
+    }
+
+    private function resolveWorkflowName(string $ciFile): string
+    {
+        $name = $this->parseWorkflowName((string) file_get_contents($ciFile));
+
+        if ($name === '') {
+            $this->warn(sprintf('No "name:" found in %s — defaulting trigger to "CI".', $this->relativePath($ciFile)));
+            $this->warn('Add a `name:` to your CI workflow or re-run with --workflow-name=<name>.');
+
+            return 'CI';
+        }
+
+        $this->info(sprintf('Detected CI workflow "%s" from %s.', $name, $this->relativePath($ciFile)));
+
+        return $name;
+    }
+
+    private function parseWorkflowName(string $content): string
+    {
+        if (preg_match('/^name:\s*(.+?)\s*$/m', $content, $matches)) {
+            return trim($matches[1], "\"'");
+        }
+
+        return '';
+    }
+
+    private function buildNotifyWorkflow(string $workflowName): string
+    {
+        $escapedName = addcslashes($workflowName, '"\\');
+
+        return <<<YAML
+            name: Telegram CI Notification
+
+            on:
+              workflow_run:
+                workflows: ["{$escapedName}"]
+                types: [completed]
+
+            jobs:
+              notify:
+                runs-on: ubuntu-latest
+                steps:
+                  - name: Notify Telegram
+                    env:
+                      APP_URL: \${{ secrets.APP_URL }}
+                      WEBHOOK_SECRET: \${{ secrets.TELEGRAM_CI_WEBHOOK_SECRET }}
+                      STATUS: \${{ github.event.workflow_run.conclusion }}
+                      BRANCH: \${{ github.event.workflow_run.head_branch }}
+                      SHA: \${{ github.event.workflow_run.head_sha }}
+                      COMMIT_MSG: \${{ github.event.workflow_run.head_commit.message }}
+                      ACTOR: \${{ github.event.workflow_run.actor.login }}
+                      RUN_URL: \${{ github.event.workflow_run.html_url }}
+                    run: |
+                      if [ "\$STATUS" != "success" ]; then STATUS="failure"; fi
+                      jq -n \\
+                        --arg status "\$STATUS" \\
+                        --arg branch "\$BRANCH" \\
+                        --arg sha "\$SHA" \\
+                        --arg commit "\$COMMIT_MSG" \\
+                        --arg actor "\$ACTOR" \\
+                        --arg run_url "\$RUN_URL" \\
+                        '{status: \$status, branch: \$branch, sha: \$sha, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
+                      curl -s -X POST "\$APP_URL/api/telegram-alerts/ci" \\
+                        -H "Authorization: Bearer \$WEBHOOK_SECRET" \\
+                        -H "Content-Type: application/json" \\
+                        --data-binary @-
+            YAML;
+    }
+
+    private function outputWorkflowSnippet(string $workflowName): void
+    {
+        $this->newLine();
+        $this->info('Add this file as .github/workflows/telegram-ci.yml:');
+        $this->newLine();
+        $this->line($this->buildNotifyWorkflow($workflowName));
     }
 
     private function detectCiWorkflowFile(): string
@@ -155,8 +222,14 @@ final class SetupCiWebhookCommand extends Command
             }
         }
 
-        $files = glob($workflowDir.'/*.{yml,yaml}', GLOB_BRACE | GLOB_NOSORT);
-        if ($files === false || $files === []) {
+        $files = glob($workflowDir.'/*.{yml,yaml}', GLOB_BRACE | GLOB_NOSORT) ?: [];
+
+        $files = array_values(array_filter(
+            $files,
+            fn (string $file): bool => basename($file) !== 'telegram-ci.yml',
+        ));
+
+        if ($files === []) {
             return '';
         }
 
@@ -164,104 +237,9 @@ final class SetupCiWebhookCommand extends Command
             return $files[0];
         }
 
-        $this->warn('Multiple workflow files found — use --ci-file to specify which one.');
+        $this->warn('Multiple workflow files found — use --ci-file or --workflow-name to specify.');
 
         return '';
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function parseJobNames(string $content): array
-    {
-        if (! preg_match('/^jobs:\s*$/m', $content)) {
-            return [];
-        }
-
-        preg_match_all('/^  ([\w][\w-]*):\s*$/m', $content, $matches);
-
-        return array_values(array_filter(
-            $matches[1],
-            fn (string $name): bool => $name !== 'notify',
-        ));
-    }
-
-    private function hasExistingNotifyJob(string $content): bool
-    {
-        return (bool) preg_match('/^  notify:\s*$/m', $content);
-    }
-
-    /**
-     * @param  list<string>  $jobNames
-     */
-    private function buildNotifyJob(array $jobNames): string
-    {
-        $needsList = implode(', ', $jobNames);
-        $failedLines = $this->buildFailedCheckLines($jobNames);
-
-        return <<<YAML
-              notify:
-                needs: [{$needsList}]
-                if: always()
-                runs-on: ubuntu-latest
-                steps:
-                  - name: Notify Telegram
-                    env:
-                      COMMIT_MSG: \${{ github.event.head_commit.message }}
-                    run: |
-                      STATUS="\${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}"
-                      FAILED=""
-            {$failedLines}
-                      if [ -n "\$FAILED" ]; then SUMMARY="Failed: \$FAILED"; else SUMMARY="All checks passed"; fi
-                      jq -n \\
-                        --arg status "\$STATUS" \\
-                        --arg branch "\${{ github.ref_name }}" \\
-                        --arg sha "\${{ github.sha }}" \\
-                        --arg commit "\$COMMIT_MSG" \\
-                        --arg actor "\${{ github.actor }}" \\
-                        --arg run_url "https://github.com/\${{ github.repository }}/actions/runs/\${{ github.run_id }}" \\
-                        '{status: \$status, branch: \$branch, sha: \$sha, commit: \$commit, actor: \$actor, run_url: \$run_url}' | \\
-                      curl -s -X POST "\${{ secrets.APP_URL }}/api/telegram-alerts/ci" \\
-                        -H "Authorization: Bearer \${{ secrets.TELEGRAM_CI_WEBHOOK_SECRET }}" \\
-                        -H "Content-Type: application/json" \\
-                        --data-binary @-
-            YAML;
-    }
-
-    /**
-     * @param  list<string>  $jobNames
-     */
-    private function buildFailedCheckLines(array $jobNames): string
-    {
-        $lines = [];
-        foreach ($jobNames as $i => $name) {
-            if ($i === 0) {
-                $lines[] = sprintf(
-                    '          if [ "${{ needs.%s.result }}" != "success" ]; then FAILED="%s"; fi',
-                    $name,
-                    $name,
-                );
-            } else {
-                $lines[] = sprintf(
-                    '          if [ "${{ needs.%s.result }}" != "success" ]; then FAILED="${FAILED:+$FAILED, }%s"; fi',
-                    $name,
-                    $name,
-                );
-            }
-        }
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * @param  list<string>  $jobNames
-     */
-    private function outputNotifySnippet(array $jobNames): void
-    {
-        $this->newLine();
-        $this->info('Add this job to your CI workflow:');
-        $this->newLine();
-        $this->line($this->buildNotifyJob($jobNames));
     }
 
     private function relativePath(string $absolutePath): string
