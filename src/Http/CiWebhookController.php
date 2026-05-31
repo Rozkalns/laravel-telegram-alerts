@@ -37,17 +37,17 @@ final readonly class CiWebhookController
         $shortSha = $sha !== '' ? substr($sha, 0, 7) : '';
 
         $commitLine = match (true) {
-            $shortSha !== '' && $commit !== '' => sprintf('`%s` %s', $shortSha, $commit),
-            $shortSha !== '' => sprintf('`%s`', $shortSha),
-            $commit !== '' => sprintf('`%s`', $commit),
-            default => '`unknown`',
+            $shortSha !== '' && $commit !== '' => sprintf('<code>%s</code> %s', e($shortSha), e($commit)),
+            $shortSha !== '' => sprintf('<code>%s</code>', e($shortSha)),
+            $commit !== '' => sprintf('<code>%s</code>', e($commit)),
+            default => '<code>unknown</code>',
         };
 
         $lines = [
-            sprintf('%s *[%s]* CI build %s', $emoji, $appName, $label),
+            sprintf('%s <b>[%s]</b> CI build %s', $emoji, e($appName), $label),
             '',
             $commitLine,
-            sprintf('Branch: `%s` · Actor: `%s`', $branch !== '' ? $branch : 'unknown', $actor !== '' ? $actor : 'unknown'),
+            sprintf('Branch: <code>%s</code> · Actor: <code>%s</code>', $branch !== '' ? e($branch) : 'unknown', $actor !== '' ? e($actor) : 'unknown'),
         ];
 
         $jobsLine = $this->buildJobsLine($request->input('jobs'));
@@ -67,7 +67,7 @@ final readonly class CiWebhookController
 
         if ($runUrl !== '') {
             $lines[] = '';
-            $lines[] = sprintf('🔗 %s', $runUrl);
+            $lines[] = sprintf('🔗 %s', e($runUrl));
         }
 
         $this->client->send(implode("\n", $lines));
@@ -98,7 +98,7 @@ final readonly class CiWebhookController
             $conclusion = is_string($rawConclusion) ? $rawConclusion : '';
             $jobEmoji = $conclusion === 'success' ? '✅' : '❌';
             $rawDuration = $job['duration'] ?? 0;
-            $parts[] = sprintf('%s %s %s', $name, $jobEmoji, $this->formatDuration(is_int($rawDuration) ? $rawDuration : 0));
+            $parts[] = sprintf('%s %s %s', e($name), $jobEmoji, $this->formatDuration(is_int($rawDuration) ? $rawDuration : 0));
         }
 
         return implode(' · ', $parts);

@@ -34,14 +34,14 @@ final readonly class QueueFailureListener
         $file = str_replace(base_path().'/', '', $exception->getFile());
 
         $lines = [
-            sprintf('⚠️ *[%s]* Queue job failed', $appName),
+            sprintf('⚠️ <b>[%s]</b> Queue job failed', e($appName)),
             '',
-            sprintf('`%s`', $event->job->resolveName()),
-            sprintf('`%s`', mb_substr($exception->getMessage(), 0, 500)),
+            sprintf('<code>%s</code>', e($event->job->resolveName())),
+            sprintf('<code>%s</code>', e(mb_substr($exception->getMessage(), 0, 500))),
             '',
-            sprintf('📄 `%s:%d`', $file, $exception->getLine()),
-            sprintf('🔄 Queue: %s | Attempt: %d', $event->job->getQueue(), $event->job->attempts()),
-            sprintf('📍 %s (%s)', $appUrl, $appEnv),
+            sprintf('📄 <code>%s:%d</code>', e($file), $exception->getLine()),
+            sprintf('🔄 Queue: %s | Attempt: %d', e($event->job->getQueue()), $event->job->attempts()),
+            sprintf('📍 %s (%s)', e($appUrl), e($appEnv)),
         ];
 
         $this->client->send(implode("\n", $lines));

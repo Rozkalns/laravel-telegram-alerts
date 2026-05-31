@@ -41,7 +41,7 @@ final class CheckBackupCommand extends Command
 
         $files = glob($pattern, GLOB_NOSORT);
         if ($files === false || $files === []) {
-            $this->sendFailure(sprintf("No backup files found.\nPattern: `%s`", $pattern));
+            $this->sendFailure(sprintf("No backup files found.\nPattern: <code>%s</code>", e($pattern)));
 
             return self::FAILURE;
         }
@@ -58,7 +58,7 @@ final class CheckBackupCommand extends Command
         }
 
         if ($newest === null) {
-            $this->sendFailure(sprintf("Could not read backup file timestamps.\nPattern: `%s`", $pattern));
+            $this->sendFailure(sprintf("Could not read backup file timestamps.\nPattern: <code>%s</code>", e($pattern)));
 
             return self::FAILURE;
         }
@@ -66,11 +66,11 @@ final class CheckBackupCommand extends Command
         $ageHours = (time() - $newestTime) / 3600;
         if ($ageHours > $maxAgeHours) {
             $this->sendFailure(sprintf(
-                "No backup file modified in the last %d hours.\nNewest: `%s` (%s ago)\nPattern: `%s`",
+                "No backup file modified in the last %d hours.\nNewest: <code>%s</code> (%s ago)\nPattern: <code>%s</code>",
                 $maxAgeHours,
-                basename($newest),
-                $this->formatAge($ageHours),
-                $pattern,
+                e(basename($newest)),
+                e($this->formatAge($ageHours)),
+                e($pattern),
             ));
 
             return self::FAILURE;
@@ -79,10 +79,10 @@ final class CheckBackupCommand extends Command
         $size = filesize($newest);
         if ($size !== false && $size < $minSizeBytes) {
             $this->sendFailure(sprintf(
-                "Backup file suspiciously small (%s bytes).\nFile: `%s`\nPattern: `%s`",
+                "Backup file suspiciously small (%s bytes).\nFile: <code>%s</code>\nPattern: <code>%s</code>",
                 number_format($size),
-                basename($newest),
-                $pattern,
+                e(basename($newest)),
+                e($pattern),
             ));
 
             return self::FAILURE;
@@ -100,11 +100,11 @@ final class CheckBackupCommand extends Command
         $appUrl = config()->string('app.url');
 
         $lines = [
-            sprintf('🔴 *[%s]* Backup check failed', $appName),
+            sprintf('🔴 <b>[%s]</b> Backup check failed', e($appName)),
             '',
             $detail,
             '',
-            sprintf('📍 %s (%s)', $appUrl, $appEnv),
+            sprintf('📍 %s (%s)', e($appUrl), e($appEnv)),
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
         ];
 

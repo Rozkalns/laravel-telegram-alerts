@@ -103,19 +103,19 @@ final readonly class SlowResponseMiddleware
 
         if ($livewire !== null) {
             $lines = [
-                sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
+                sprintf('🐌 <b>[%s]</b> Slow response (%ss)', e($appName), $seconds),
                 '',
-                sprintf('Component: `%s::%s`', $livewire['component'], $livewire['method']),
+                sprintf('Component: <code>%s::%s</code>', e($livewire['component']), e($livewire['method'])),
                 '',
             ];
         } else {
             $action = $request->route()?->getActionName() ?? 'unknown'; // @phpstan-ignore nullsafe.neverNull, nullCoalesce.expr
 
             $lines = [
-                sprintf('🐌 *[%s]* Slow response (%ss)', $appName, $seconds),
+                sprintf('🐌 <b>[%s]</b> Slow response (%ss)', e($appName), $seconds),
                 '',
-                sprintf('`%s %s`', $request->method(), $request->getRequestUri()),
-                sprintf('`%s`', $action),
+                sprintf('<code>%s %s</code>', e($request->method()), e($request->getRequestUri())),
+                sprintf('<code>%s</code>', e($action)),
                 '',
             ];
         }
@@ -125,7 +125,7 @@ final readonly class SlowResponseMiddleware
         }
 
         $lines[] = sprintf('⏱️ %s ms (threshold: %s ms)', number_format($elapsedMs), number_format($thresholdMs));
-        $lines[] = sprintf('📍 %s (%s)', $appUrl, $appEnv);
+        $lines[] = sprintf('📍 %s (%s)', e($appUrl), e($appEnv));
 
         $this->client->send(implode("\n", $lines));
     }

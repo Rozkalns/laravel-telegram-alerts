@@ -21,7 +21,7 @@ it('sends a message to the telegram api', function (): void {
     Http::assertSent(fn ($request): bool => $request->url() === 'https://api.telegram.org/botbot-token/sendMessage'
         && $request['chat_id'] === '12345'
         && $request['text'] === 'Hello world'
-        && $request['parse_mode'] === 'Markdown'
+        && $request['parse_mode'] === 'HTML'
         && $request['disable_web_page_preview'] === true);
 });
 

@@ -35,17 +35,17 @@ final class NotifyDeployCommand extends Command
         $commitMsg = trim(Process::run('git log -1 --format="%s"')->output());
 
         $commitLine = match (true) {
-            $shortSha !== '' && $commitMsg !== '' => sprintf('`%s` %s', $shortSha, $commitMsg),
-            $shortSha !== '' => sprintf('`%s`', $shortSha),
+            $shortSha !== '' && $commitMsg !== '' => sprintf('<code>%s</code> %s', e($shortSha), e($commitMsg)),
+            $shortSha !== '' => sprintf('<code>%s</code>', e($shortSha)),
             default => 'unknown',
         };
 
         $text = implode("\n", [
-            sprintf('✅ *[%s]* deployed', $appName),
+            sprintf('✅ <b>[%s]</b> deployed', e($appName)),
             '',
             $commitLine,
             '',
-            sprintf('📍 %s (%s)', $appUrl, $appEnv),
+            sprintf('📍 %s (%s)', e($appUrl), e($appEnv)),
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
         ]);
 

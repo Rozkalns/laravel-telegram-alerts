@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Rozkalns\TelegramAlerts\TelegramClient;
@@ -55,8 +56,8 @@ it('sends success notification with correct emoji', function (): void {
 
     Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '✅')
         && str_contains((string) $request['text'], 'passed')
-        && str_contains((string) $request['text'], '`a6aa687` fix: tests')
-        && str_contains((string) $request['text'], 'Branch: `main` · Actor: `Rozkalns`')
+        && str_contains((string) $request['text'], '<code>a6aa687</code> fix: tests')
+        && str_contains((string) $request['text'], 'Branch: <code>main</code> · Actor: <code>Rozkalns</code>')
         && str_contains((string) $request['text'], 'https://github.com/org/repo/actions/runs/123'));
 });
 
@@ -197,4 +198,24 @@ it('formats durations across seconds, minutes, and hours', function (): void {
         && str_contains((string) $request['text'], 'c ✅ 1h')
         && str_contains((string) $request['text'], 'd ✅ 1h 3m')
         && str_contains((string) $request['text'], '⏱️ total 45s'));
+});
+
+it('escapes html-special and markdown characters in dynamic values', function (): void {
+    ciPost([
+        'status' => 'success',
+        'sha' => 'abc1234',
+        'commit' => 'fix: workflow_run & <danger> *bold* `code`',
+        'branch' => 'feat/x_y',
+        'actor' => 'a_b',
+    ])->assertOk();
+
+    Http::assertSent(function (Request $request): bool {
+        $text = (string) $request['text'];
+
+        return $request['parse_mode'] === 'HTML'
+            && str_contains($text, 'workflow_run')
+            && str_contains($text, '&amp;')
+            && str_contains($text, '&lt;danger&gt;')
+            && ! str_contains($text, '<danger>');
+    });
 });
