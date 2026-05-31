@@ -42,10 +42,10 @@ final class HeartbeatCommand extends Command
         }
 
         $lines = [
-            sprintf('💚 *[%s]* Heartbeat', $appName),
+            sprintf('💚 <b>[%s]</b> Heartbeat', e($appName)),
             '',
             sprintf('📊 Queue: %d pending, %d failed', $pendingJobs, $failedJobs),
-            sprintf('📍 %s (%s)', $appUrl, $appEnv),
+            sprintf('📍 %s (%s)', e($appUrl), e($appEnv)),
             sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
         ];
 

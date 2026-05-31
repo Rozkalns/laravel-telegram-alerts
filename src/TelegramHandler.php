@@ -42,21 +42,21 @@ final class TelegramHandler extends AbstractProcessingHandler
         }
 
         $lines = [
-            sprintf('🚨 *[%s]* %s', $appName, $record->level->name),
+            sprintf('🚨 <b>[%s]</b> %s', e($appName), e($record->level->name)),
             '',
-            sprintf('`%s`', $message),
+            sprintf('<code>%s</code>', e($message)),
         ];
 
         $exception = $record->context['exception'] ?? null;
         if ($exception instanceof Throwable) {
             $file = str_replace(base_path().'/', '', $exception->getFile());
             $lines[] = '';
-            $lines[] = sprintf('📄 `%s:%d`', $file, $exception->getLine());
-            $lines[] = sprintf('💥 `%s`', $exception::class);
+            $lines[] = sprintf('📄 <code>%s:%d</code>', e($file), $exception->getLine());
+            $lines[] = sprintf('💥 <code>%s</code>', e($exception::class));
         }
 
         $lines[] = '';
-        $lines[] = sprintf('📍 %s (%s)', $appUrl, $appEnv);
+        $lines[] = sprintf('📍 %s (%s)', e($appUrl), e($appEnv));
         $lines[] = '🕐 '.$record->datetime->format('Y-m-d H:i:s T');
 
         $this->client->send(implode("\n", $lines));

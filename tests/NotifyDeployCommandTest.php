@@ -24,7 +24,7 @@ it('sends a deploy notification', function (): void {
         SendTelegramMessageJob::class,
         fn (SendTelegramMessageJob $job): bool => str_contains($job->text, 'deployed')
             && str_contains($job->text, 'TestApp')
-            && str_contains($job->text, '`abc1234` Initial commit'),
+            && str_contains($job->text, '<code>abc1234</code> Initial commit'),
     );
 });
 
@@ -38,7 +38,7 @@ it('shows only sha when commit message is empty', function (): void {
 
     Queue::assertPushed(
         SendTelegramMessageJob::class,
-        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, '`abc1234`'),
+        fn (SendTelegramMessageJob $job): bool => str_contains($job->text, '<code>abc1234</code>'),
     );
 });
 

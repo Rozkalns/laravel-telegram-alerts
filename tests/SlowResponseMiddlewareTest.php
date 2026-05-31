@@ -231,7 +231,7 @@ it('shows livewire component and method for livewire requests', function (): voi
     $this->postJson('/livewire-test1/update', livewirePayload('competition-results', 'loadRankings'))
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: `competition-results::loadRankings`')
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: <code>competition-results::loadRankings</code>')
         && ! str_contains((string) $request['text'], '/livewire-test1/update'));
 });
 
@@ -247,7 +247,7 @@ it('defaults livewire method to __render when no calls present', function (): vo
     $this->postJson('/livewire-test2/update', livewirePayload('counter', null))
         ->assertOk();
 
-    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: `counter::__render`'));
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'Component: <code>counter::__render</code>'));
 });
 
 it('falls back to standard format for malformed livewire payload', function (): void {
