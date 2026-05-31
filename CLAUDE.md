@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Laravel package (`rozkalns/laravel-telegram-alerts`) that sends production errors and deploy notifications to Telegram. It registers a Monolog handler as a Laravel log channel and provides an artisan deploy-notify command.
 
 - **Namespace:** `Rozkalns\TelegramAlerts`
-- **PHP:** 8.4+, **Laravel:** 13
+- **PHP:** 8.5+, **Laravel:** 13
 - **License:** Beerware
 
 ## Commands
