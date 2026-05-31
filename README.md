@@ -94,7 +94,7 @@ TELEGRAM_BACKUP_PATH=/path/to/backups/database.backup-*.sqlite
 
 ### 6. CI Pipeline Notifications (optional)
 
-Get Telegram alerts when your GitHub Actions workflows pass or fail — on any branch or PR.
+Get Telegram alerts when your GitHub Actions CI workflow passes or fails — on any branch or PR, including Dependabot and fork PRs.
 
 **One-command setup:**
 
@@ -106,19 +106,22 @@ This will:
 - Generate a secure webhook secret
 - Write `TELEGRAM_CI_WEBHOOK=true` and the secret to `.env`
 - Set `TELEGRAM_CI_WEBHOOK_SECRET` and `APP_URL` as GitHub repository secrets (requires `gh` CLI)
-- Output a workflow snippet to add to your GitHub Actions
+- Generate `.github/workflows/telegram-ci.yml`, a standalone workflow that triggers on your CI workflow's completion (`workflow_run`) and posts the result to your app
 
 **Options:**
 
 ```bash
-# Target a specific GitHub environment
+# Target a specific GitHub environment for the secrets
 php artisan telegram:ci-webhook-setup --env=Testing
 
-# Generate a standalone workflow file at .github/workflows/telegram-ci.yml
-php artisan telegram:ci-webhook-setup --generate-workflow
+# Point at a specific CI workflow file for name detection
+php artisan telegram:ci-webhook-setup --ci-file=.github/workflows/tests.yml
+
+# Override the CI workflow name the notifier triggers on
+php artisan telegram:ci-webhook-setup --workflow-name="CI"
 ```
 
-The command is idempotent — re-running regenerates the secret and updates both `.env` and GitHub.
+> **Why a separate workflow?** `workflow_run` runs in your repository's trusted context, so repository secrets are available even on Dependabot and fork PRs (where an injected job would receive empty secrets and fail). It also begins firing only once `telegram-ci.yml` is on your **default branch** — commit and merge it before expecting notifications.
 
 **Manual setup** (if you prefer not to use the setup command):
 
