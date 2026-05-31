@@ -146,12 +146,14 @@ final class SetupCiWebhookCommand extends Command
 
     private function buildNotifyWorkflow(string $workflowName): string
     {
+        $escapedName = addcslashes($workflowName, '"\\');
+
         return <<<YAML
             name: Telegram CI Notification
 
             on:
               workflow_run:
-                workflows: ["{$workflowName}"]
+                workflows: ["{$escapedName}"]
                 types: [completed]
 
             jobs:
@@ -220,10 +222,7 @@ final class SetupCiWebhookCommand extends Command
             }
         }
 
-        $files = glob($workflowDir.'/*.{yml,yaml}', GLOB_BRACE | GLOB_NOSORT);
-        if ($files === false) {
-            return '';
-        }
+        $files = glob($workflowDir.'/*.{yml,yaml}', GLOB_BRACE | GLOB_NOSORT) ?: [];
 
         $files = array_values(array_filter(
             $files,

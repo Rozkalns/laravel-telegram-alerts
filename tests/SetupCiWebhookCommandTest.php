@@ -384,3 +384,50 @@ it('does not overwrite an existing telegram-ci.yml when declined', function (): 
     expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
         ->toBe("existing-content\n");
 });
+
+it('creates the workflow directory when it does not exist', function (): void {
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup --workflow-name=Deploy')
+        ->assertSuccessful();
+
+    expect(file_exists(base_path('.github/workflows/telegram-ci.yml')))->toBeTrue()
+        ->and(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toContain('workflows: ["Deploy"]');
+});
+
+it('falls back to snippet when only telegram-ci.yml exists in the workflow dir', function (): void {
+    file_put_contents(workflowDir().'/telegram-ci.yml', "name: Telegram CI Notification\n");
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('Could not detect a CI workflow')
+        ->expectsOutputToContain('name: Telegram CI Notification')
+        ->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toBe("name: Telegram CI Notification\n");
+});
+
+it('auto-detects a single non-standard workflow file', function (): void {
+    createCiWorkflow("name: Deploy\non: [push]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo deploy\n", 'deploy.yml');
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')
+        ->expectsOutputToContain('Detected CI workflow "Deploy"')
+        ->expectsOutputToContain('Generated .github/workflows/telegram-ci.yml')
+        ->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toContain('workflows: ["Deploy"]');
+});
+
+it('escapes double quotes in the workflow name', function (): void {
+    createCiWorkflow("name: 'My \"App\" CI'\n\non: [push]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo build\n");
+    fakeNoGithub();
+
+    $this->artisan('telegram:ci-webhook-setup')->assertSuccessful();
+
+    expect(file_get_contents(base_path('.github/workflows/telegram-ci.yml')))
+        ->toContain('workflows: ["My \\"App\\" CI"]');
+});
