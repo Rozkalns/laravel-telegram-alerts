@@ -2,6 +2,21 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.4.0
+
+### Changed
+
+- **CI notifications now use a standalone `workflow_run` workflow.** `telegram:ci-webhook-setup` generates `.github/workflows/telegram-ci.yml` instead of injecting a `notify` job into your CI workflow. The previous inline job failed on Dependabot and fork PRs, where GitHub withholds repository secrets from the untrusted run context (empty `APP_URL` produced a malformed `curl` URL and a non-zero exit). The new workflow runs in the trusted default-branch context, so secrets are available for every run. Added `--workflow-name` to override CI workflow-name detection; removed the unused `--generate-workflow` flag.
+
+### Upgrade notes
+
+For each repository already using the injected `notify` job:
+
+1. Delete the `notify:` job from your CI workflow file (e.g. `.github/workflows/ci.yml`).
+2. Re-run `php artisan telegram:ci-webhook-setup` (or copy the printed snippet) to add `telegram-ci.yml`.
+3. **No secret changes needed** — your existing `APP_URL` and `TELEGRAM_CI_WEBHOOK_SECRET` *Actions* secrets keep working, because `workflow_run` runs in the trusted context.
+4. Merge `telegram-ci.yml` to your default branch to activate it (`workflow_run` only fires from the default branch).
+
 ## v0.3.0
 
 ### Added
