@@ -155,6 +155,18 @@ it('skips job entries without a name', function (): void {
         && ! str_contains((string) $request['text'], ' ✅ 10s'));
 });
 
+it('skips non-array entries within jobs array', function (): void {
+    ciPost([
+        'status' => 'success',
+        'jobs' => [
+            'not-an-array-entry',
+            ['name' => 'build', 'conclusion' => 'success', 'duration' => 5],
+        ],
+    ])->assertOk();
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], 'build ✅ 5s'));
+});
+
 it('formats durations across seconds, minutes, and hours', function (): void {
     ciPost([
         'status' => 'success',
