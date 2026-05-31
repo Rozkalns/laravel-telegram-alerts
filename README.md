@@ -106,7 +106,7 @@ This will:
 - Generate a secure webhook secret
 - Write `TELEGRAM_CI_WEBHOOK=true` and the secret to `.env`
 - Set `TELEGRAM_CI_WEBHOOK_SECRET` and `APP_URL` as GitHub repository secrets (requires `gh` CLI)
-- Generate `.github/workflows/telegram-ci.yml`, a standalone workflow that triggers on your CI workflow's completion (`workflow_run`) and posts the result to your app
+- Generate `.github/workflows/telegram-ci.yml`, a standalone workflow that triggers on your CI workflow's completion (`workflow_run`) and posts the result — including a per-job breakdown and run time — to your app (it reads per-job timings via `actions: read` and the built-in `GITHUB_TOKEN`)
 
 **Options:**
 
@@ -210,23 +210,29 @@ Pattern: `/home/forge/myapp/db/database.backup-*.sqlite`
 ### CI build passed
 
 ```
-✅ [MyApp] CI build passed
+✅ *[MyApp]* CI build passed
 
-Branch: `feature/payments`
-Commit: `feat: add Stripe integration`
-Actor: `Rozkalns`
+`a6aa687` fix: handle null route
+Branch: `main` · Actor: `dependabot[bot]`
+
+lint ✅ 23s · tests ✅ 1m 47s
+⏱️ total 2m 10s
+
 🔗 https://github.com/org/repo/actions/runs/123
 ```
 
 ### CI build failed
 
 ```
-❌ [MyApp] CI build failed
+❌ *[MyApp]* CI build failed
 
-Branch: `main`
-Commit: `fix: update validation rules`
-Actor: `Rozkalns`
-🔗 https://github.com/org/repo/actions/runs/456
+`a6aa687` wip: broken test
+Branch: `feature/x` · Actor: `Rozkalns`
+
+lint ✅ 19s · tests ❌ 41s
+⏱️ total 1m 0s
+
+🔗 https://github.com/org/repo/actions/runs/124
 ```
 
 ## Configuration
