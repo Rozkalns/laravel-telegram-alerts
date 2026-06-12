@@ -1,7 +1,6 @@
 {
     "name": "rozkalns/laravel-telegram-alerts",
     "description": "Telegram error notifications and deploy alerts for Laravel",
-    "version": "0.6.0",
     "keywords": ["laravel", "telegram", "alerts", "logging", "notifications"],
     "license": "Beerware",
     "authors": [
