@@ -101,6 +101,12 @@ Malformed/unrecognized payloads: respond `200 OK`, send nothing (don't trigger G
 - [ ] GlitchTip UI: project → Alerts → Add Alert Recipient → webhook URL `https://<site>/api/telegram-alerts/glitchtip?token=<secret>`
 - [ ] Verify: resolve the test issue in GlitchTip, run `php artisan sentry:test` on the server (regression triggers the alert), confirm Telegram message arrives with a working issue link
 
+### kartites (2026-06-12)
+- [x] `composer require rozkalns/laravel-telegram-alerts:^0.6.0` (VCS repo, tag pulled from GitHub) — committed to `main`; route `POST /api/telegram-alerts/glitchtip` confirmed registered
+- [x] GlitchTip UI: `Čakstes Faili` project → Alerts → webhook recipient `https://kartites.rozkalns.xyz/api/telegram-alerts/glitchtip?token=…` added
+- [x] Forge env: `TELEGRAM_GLITCHTIP_WEBHOOK=true` + secret, dropped `telegram` from `LOG_STACK`, deployed + `config:cache`
+- [x] Verify: `php artisan sentry:test` → `🐞 [Kartītes] GlitchTip issue` Telegram message arrived with a working `🔍 Open in GlitchTip` button (2026-06-12 15:38 UTC)
+
 ## Technical Considerations
 
 - **Topology**: per-site delivery — each GlitchTip project's webhook points at its own site's endpoint. `[APP_NAME]` prefix comes free from the receiving app; no central relay. If a site is hard-down its own alerts can't deliver, but a dead site isn't producing exceptions either — GlitchTip email (and later uptime monitoring) covers that gap.
