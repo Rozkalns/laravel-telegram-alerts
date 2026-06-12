@@ -2,6 +2,17 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.6.0
+
+### Added
+
+- **GlitchTip error tracking via webhook.** A new endpoint `POST /api/telegram-alerts/glitchtip?token=<secret>` receives GlitchTip's Slack-compatible issue alerts and forwards them to Telegram with a tappable link — both the issue title and a `🔍 Open in GlitchTip` inline button open the issue directly. Disabled by default; enable with `TELEGRAM_GLITCHTIP_WEBHOOK=true` and `TELEGRAM_GLITCHTIP_WEBHOOK_SECRET`. The message includes the culprit, environment, release, and issue short ID when present; malformed payloads return `200` without sending. This is additive — the log-channel error alerts are unchanged, so each project can keep `telegram` in `LOG_STACK`, switch to the GlitchTip webhook, or run both.
+- `TelegramClient::send()` accepts an optional inline-keyboard reply markup (backward-compatible — existing callers are unaffected).
+
+### Upgrade notes
+
+No breaking changes. Error alerts and all other features keep working as before. To use GlitchTip alerts, see the "GlitchTip Error Tracking" section in the README.
+
 ## v0.5.1
 
 ### Fixed

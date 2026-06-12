@@ -11,6 +11,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **Scheduler heartbeat** — periodic ping to confirm your scheduler is alive
 - **Backup verification** — daily check that backup files exist and are recent
 - **CI pipeline notifications** — webhook endpoint for GitHub Actions (or any CI) to report build results
+- **GlitchTip error tracking** — webhook receiver that turns GlitchTip issue alerts into Telegram messages with a tappable link to the issue
 - **Project identification** — `[APP_NAME]` prefix on every message, so one bot handles all your projects
 - **Rate limiting** — deduplication on all alert types to avoid notification storms
 - **Auto-registration** — everything registers itself via the service provider
@@ -132,6 +133,46 @@ TELEGRAM_CI_WEBHOOK_SECRET=your-secret-here
 
 Then add a step to your workflow that posts results to `POST /api/telegram-alerts/ci` with the `Authorization: Bearer <secret>` header.
 
+### 7. GlitchTip Error Tracking (optional)
+
+[GlitchTip](https://glitchtip.com) (Sentry-API-compatible error tracking) groups your exceptions into issues with stack traces and a web UI. This package can receive GlitchTip's webhook alerts and forward them to Telegram — with a tappable link that opens the issue directly. Unlike the log-channel error alerts (which ping on every ERROR+ entry), GlitchTip fires on **new issues and regressions**, so you get fewer, smarter notifications.
+
+**1. Enable the webhook in `.env`:**
+
+```env
+TELEGRAM_GLITCHTIP_WEBHOOK=true
+TELEGRAM_GLITCHTIP_WEBHOOK_SECRET=your-secret-here
+```
+
+Generate a secret with:
+
+```bash
+php -r "echo bin2hex(random_bytes(16)).PHP_EOL;"
+```
+
+Then clear the config cache (`php artisan config:clear`).
+
+**2. Point GlitchTip at your app:**
+
+In GlitchTip, open your **Project → Alerts → Add An Alert Recipient**, then:
+
+- **Recipient Type:** *General (slack-compatible) Webhook*
+- **Webhook URL:** `https://<your-app>/api/telegram-alerts/glitchtip?token=<your-secret>`
+
+Click **Add Recipient**, then **Update** to save the alert. Trigger a test error to confirm the message arrives with a working issue link:
+
+```bash
+php artisan tinker --execute 'throw new Exception("glitchtip test");'
+```
+
+> **Why a query-string token?** GlitchTip's webhook config is a bare URL with no custom headers, so the secret travels as a `?token=` query param (timing-safe compared on the server). It will appear in your web server's access logs — rotate it if that's a concern.
+
+**Choosing your error alert source:** the log-channel error alerts and the GlitchTip webhook are independent, so each project can pick one:
+
+- Keep `telegram` in `LOG_STACK` — every ERROR+ log entry pings Telegram (no issue link).
+- Drop `telegram` from `LOG_STACK` and enable the GlitchTip webhook — fewer, grouped, tappable alerts.
+- Run both during a transition.
+
 ## What You Get
 
 ### Error notification
@@ -235,6 +276,20 @@ lint ✅ 19s · tests ❌ 41s
 🔗 https://github.com/org/repo/actions/runs/124
 ```
 
+### GlitchTip issue
+
+```
+🐞 *[MyApp]* GlitchTip issue
+
+PROJ-1 ZeroDivisionError: division by zero
+📄 trigger_error
+📍 production · abc123
+
+[🔍 Open in GlitchTip]
+```
+
+The issue title and the **Open in GlitchTip** button both link straight to the issue in GlitchTip.
+
 ## Configuration
 
 Publish the config to customize:
@@ -269,6 +324,10 @@ return [
     // CI webhook endpoint (disabled by default)
     'ci_webhook' => false,
     'ci_webhook_secret' => env('TELEGRAM_CI_WEBHOOK_SECRET', ''),
+
+    // GlitchTip webhook endpoint (disabled by default)
+    'glitchtip_webhook' => false,
+    'glitchtip_webhook_secret' => env('TELEGRAM_GLITCHTIP_WEBHOOK_SECRET', ''),
 ];
 ```
 
@@ -283,6 +342,7 @@ return [
 | Heartbeat | **Off** | Set `scheduler_heartbeat` to `true` |
 | Backup verification | **Off** | Set `backup_path` to a file/glob pattern |
 | CI notifications | **Off** | `php artisan telegram:ci-webhook-setup` |
+| GlitchTip alerts | **Off** | Set `glitchtip_webhook` to `true` + add a webhook in GlitchTip |
 
 ## How It Works
 

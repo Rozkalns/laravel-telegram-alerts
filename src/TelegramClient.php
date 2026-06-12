@@ -18,10 +18,24 @@ final readonly class TelegramClient
         private int $maxAttempts = 3,
     ) {}
 
-    public function send(string $text): void
+    /**
+     * @param  array<string, mixed>|null  $replyMarkup
+     */
+    public function send(string $text, ?array $replyMarkup = null): void
     {
         if (! $this->isConfigured()) {
             return;
+        }
+
+        $payload = [
+            'chat_id' => $this->chatId,
+            'text' => $text,
+            'parse_mode' => 'HTML',
+            'disable_web_page_preview' => true,
+        ];
+
+        if ($replyMarkup !== null) {
+            $payload['reply_markup'] = $replyMarkup;
         }
 
         $attempts = max($this->maxAttempts, 1);
@@ -30,12 +44,7 @@ final readonly class TelegramClient
             try {
                 $response = Http::timeout(5)->post(
                     sprintf('https://api.telegram.org/bot%s/sendMessage', $this->token),
-                    [
-                        'chat_id' => $this->chatId,
-                        'text' => $text,
-                        'parse_mode' => 'HTML',
-                        'disable_web_page_preview' => true,
-                    ],
+                    $payload,
                 );
 
                 if ($response->successful()) {

@@ -25,6 +25,32 @@ it('sends a message to the telegram api', function (): void {
         && $request['disable_web_page_preview'] === true);
 });
 
+it('includes reply markup in the payload when provided', function (): void {
+    Http::fake();
+    $logger = Mockery::mock();
+    $logger->shouldReceive('info')->once();
+    Log::shouldReceive('channel')->with('single')->andReturn($logger);
+
+    $markup = ['inline_keyboard' => [[['text' => '🔍 Open', 'url' => 'https://example.com']]]];
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello', $markup);
+
+    Http::assertSent(fn ($request): bool => $request['reply_markup'] === $markup);
+});
+
+it('omits reply markup from the payload by default', function (): void {
+    Http::fake();
+    $logger = Mockery::mock();
+    $logger->shouldReceive('info')->once();
+    Log::shouldReceive('channel')->with('single')->andReturn($logger);
+
+    $client = new TelegramClient(token: 'bot-token', chatId: '12345');
+    $client->send('Hello');
+
+    Http::assertSent(fn ($request): bool => ! isset($request['reply_markup']));
+});
+
 it('is a no-op when token is empty', function (): void {
     Http::fake();
 

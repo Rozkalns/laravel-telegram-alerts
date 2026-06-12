@@ -30,4 +30,8 @@ return [
 
     'ci_webhook_secret' => env('TELEGRAM_CI_WEBHOOK_SECRET', ''),
 
+    'glitchtip_webhook' => (bool) env('TELEGRAM_GLITCHTIP_WEBHOOK', false),
+
+    'glitchtip_webhook_secret' => env('TELEGRAM_GLITCHTIP_WEBHOOK_SECRET', ''),
+
 ];
