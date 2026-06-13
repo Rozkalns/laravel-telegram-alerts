@@ -7,7 +7,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **Error alerts** — ERROR+ log entries sent to Telegram with exception class, file, and line number
 - **Deploy notifications** — artisan command to announce successful deploys
 - **Queue failure alerts** — instant notification when a queued job fails
-- **Slow response detection** — alerts when requests exceed a configurable duration threshold
+- **Slow response detection** — alerts when requests exceed a configurable duration threshold, enriched with the user, a DB-vs-app time split, the slowest query, and Livewire component/model context
 - **Scheduler heartbeat** — periodic ping to confirm your scheduler is alive
 - **Backup verification** — daily check that backup files exist and are recent
 - **CI pipeline notifications** — webhook endpoint for GitHub Actions (or any CI) to report build results
@@ -215,15 +215,38 @@ php artisan tinker --execute 'throw new Exception("glitchtip test");'
 
 ### Slow response alert
 
-```
-🐌 [MyApp] Slow response (3.2s)
+Alerts carry context to help you investigate: the authenticated user, a DB-vs-app time split (so you can tell instantly whether the database is the bottleneck), the slowest query when one dominates, and an N+1 hint when the query count is high.
 
+Route/controller request:
+
+```
+🐌 [MyApp] Slow response (4.3s)
+
+👤 Rūdolfs · rudolfs@example.com (#17)
 `GET /students/123/observations?semester=2026-spring`
 `App\Http\Controllers\ObservationController@index`
 
-⏱️ 3,200 ms (threshold: 2,000 ms)
+🗄️ DB 1,572ms · app 2,732ms · 4 queries
+🐢 slowest: `select * from observations where student_id = ?` (1,401 ms)
+⏱️ 4,304 ms (threshold: 2,000 ms)
 📍 https://myapp.com (production)
 ```
+
+Livewire request — there's no real route, so the component, the called method with its arguments, and any bound models are shown instead:
+
+```
+🐌 [MyApp] Slow response (2.6s)
+
+👤 Rūdolfs · rudolfs@example.com (#17)
+Component: participants.index::exportStartingLists(42)
+🔗 Competition #42
+
+🗄️ DB 74ms · app 2,538ms · 304 queries ⚠️ N+1?
+⏱️ 2,612 ms (threshold: 2,000 ms)
+📍 https://myapp.com (production)
+```
+
+The slowest-query line logs the SQL template only (with `?` placeholders) — never the bound values. Bound models surface as `Model #key`; id/ulid properties as `key=value`. Arrays and other state are never dumped.
 
 ### Scheduler heartbeat
 
@@ -312,6 +335,10 @@ return [
     // Slow response threshold in ms (0 = disabled)
     'slow_response_threshold' => 0,
     'slow_response_exclude' => ['/health', '/up'],
+    // Show the slowest query when it took at least this many ms
+    'slow_query_threshold' => 100,
+    // Flag a possible N+1 when a request runs at least this many queries
+    'n_plus_one_threshold' => 100,
 
     // Scheduler heartbeat (disabled by default)
     'scheduler_heartbeat' => false,

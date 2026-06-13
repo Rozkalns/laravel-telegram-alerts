@@ -7,6 +7,7 @@ namespace Rozkalns\TelegramAlerts\Middleware;
 use Closure;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Rozkalns\TelegramAlerts\TelegramClient;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,20 +23,27 @@ final readonly class SlowResponseMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $request->attributes->set('_telegram_start_us', (int) (microtime(true) * 1_000_000));
+        $request->attributes->set('_telegram_start_ms', now()->getTimestampMs());
 
         $queryCount = 0;
         $queryTimeMs = 0.0;
+        $slowestSql = '';
+        $slowestTimeMs = 0.0;
 
         $request->attributes->set('_telegram_listening', true);
 
-        DB::listen(function (QueryExecuted $query) use (&$queryCount, &$queryTimeMs, $request): void {
+        DB::listen(function (QueryExecuted $query) use (&$queryCount, &$queryTimeMs, &$slowestSql, &$slowestTimeMs, $request): void {
             if (! $request->attributes->getBoolean('_telegram_listening')) {
                 return;
             }
 
             $queryCount++;
             $queryTimeMs += $query->time;
+
+            if ($query->time >= $slowestTimeMs) {
+                $slowestTimeMs = $query->time;
+                $slowestSql = $query->sql;
+            }
         });
 
         $response = $next($request);
@@ -44,6 +52,8 @@ final readonly class SlowResponseMiddleware
 
         $request->attributes->set('_telegram_query_count', $queryCount);
         $request->attributes->set('_telegram_query_time_ms', $queryTimeMs);
+        $request->attributes->set('_telegram_slowest_sql', $slowestSql);
+        $request->attributes->set('_telegram_slowest_time_ms', $slowestTimeMs);
 
         return $response;
     }
@@ -66,13 +76,12 @@ final readonly class SlowResponseMiddleware
             }
         }
 
-        $startUs = $request->attributes->getInt('_telegram_start_us');
-        if ($startUs === 0) {
+        $startMs = $request->attributes->getInt('_telegram_start_ms');
+        if ($startMs === 0) {
             return;
         }
 
-        $nowUs = (int) (microtime(true) * 1_000_000);
-        $elapsedMs = (int) round(($nowUs - $startUs) / 1000);
+        $elapsedMs = now()->getTimestampMs() - $startMs;
 
         if ($elapsedMs < $thresholdMs) {
             return;
@@ -101,27 +110,58 @@ final readonly class SlowResponseMiddleware
         $rawQueryTimeMs = $request->attributes->get('_telegram_query_time_ms', 0.0);
         $queryTimeMs = (int) round(is_numeric($rawQueryTimeMs) ? (float) $rawQueryTimeMs : 0.0);
 
+        $slowestSql = $request->attributes->getString('_telegram_slowest_sql');
+        $rawSlowestMs = $request->attributes->get('_telegram_slowest_time_ms', 0.0);
+        $slowestTimeMs = (int) round(is_numeric($rawSlowestMs) ? (float) $rawSlowestMs : 0.0);
+
+        $lines = [
+            sprintf('🐌 <b>[%s]</b> Slow response (%ss)', e($appName), $seconds),
+            '',
+        ];
+
+        $user = $this->describeUser();
+        if ($user !== null) {
+            $lines[] = sprintf('👤 %s', $user);
+        }
+
         if ($livewire !== null) {
-            $lines = [
-                sprintf('🐌 <b>[%s]</b> Slow response (%ss)', e($appName), $seconds),
-                '',
-                sprintf('Component: <code>%s::%s</code>', e($livewire['component']), e($livewire['method'])),
-                '',
-            ];
+            $signature = $livewire['method'];
+            if ($livewire['params'] !== []) {
+                $signature .= '('.implode(', ', $livewire['params']).')';
+            }
+
+            $lines[] = sprintf('Component: <code>%s::%s</code>', e($livewire['component']), e($signature));
+
+            if ($livewire['entities'] !== []) {
+                $escaped = [];
+                foreach ($livewire['entities'] as $entity) {
+                    $escaped[] = e($entity);
+                }
+
+                $lines[] = '🔗 '.implode(' · ', $escaped);
+            }
         } else {
             $action = $request->route()?->getActionName() ?? 'unknown'; // @phpstan-ignore nullsafe.neverNull, nullCoalesce.expr
 
-            $lines = [
-                sprintf('🐌 <b>[%s]</b> Slow response (%ss)', e($appName), $seconds),
-                '',
-                sprintf('<code>%s %s</code>', e($request->method()), e($request->getRequestUri())),
-                sprintf('<code>%s</code>', e($action)),
-                '',
-            ];
+            $lines[] = sprintf('<code>%s %s</code>', e($request->method()), e($request->getRequestUri()));
+            $lines[] = sprintf('<code>%s</code>', e($action));
         }
 
+        $lines[] = '';
+
         if ($queryCount > 0) {
-            $lines[] = sprintf('🗄️ %s queries (%s ms)', number_format($queryCount), number_format($queryTimeMs));
+            $appMs = max(0, $elapsedMs - $queryTimeMs);
+            $dbLine = sprintf('🗄️ DB %sms · app %sms · %s queries', number_format($queryTimeMs), number_format($appMs), number_format($queryCount));
+
+            if ($queryCount >= config()->integer('telegram-alerts.n_plus_one_threshold', 100)) {
+                $dbLine .= ' ⚠️ N+1?';
+            }
+
+            $lines[] = $dbLine;
+
+            if ($slowestSql !== '' && $slowestTimeMs >= config()->integer('telegram-alerts.slow_query_threshold', 100)) {
+                $lines[] = sprintf('🐢 slowest: <code>%s</code> (%s ms)', e($this->truncateSql($slowestSql)), number_format($slowestTimeMs));
+            }
         }
 
         $lines[] = sprintf('⏱️ %s ms (threshold: %s ms)', number_format($elapsedMs), number_format($thresholdMs));
@@ -130,7 +170,32 @@ final readonly class SlowResponseMiddleware
         $this->client->send(implode("\n", $lines));
     }
 
-    /** @return array{component: string, method: string}|null */
+    private function describeUser(): ?string
+    {
+        $user = Auth::user();
+        if ($user === null) {
+            return null;
+        }
+
+        $parts = [];
+        foreach (['name', 'email'] as $key) {
+            $value = data_get($user, $key);
+            if (is_string($value) && $value !== '') {
+                $parts[] = e($value);
+            }
+        }
+
+        $label = $parts !== [] ? implode(' · ', $parts) : 'User';
+
+        $id = Auth::id();
+        if ($id !== null) {
+            $label .= sprintf(' (#%s)', e((string) $id));
+        }
+
+        return $label;
+    }
+
+    /** @return array{component: string, method: string, params: list<string>, entities: list<string>}|null */
     private function extractLivewireContext(Request $request): ?array
     {
         if (! $request->isMethod('POST') || ! str_contains($request->path(), 'livewire') || ! str_ends_with($request->path(), '/update')) {
@@ -175,6 +240,88 @@ final readonly class SlowResponseMiddleware
         return [
             'component' => $component,
             'method' => is_string($method) ? $method : '__render',
+            'params' => $this->extractCallParams($calls),
+            'entities' => $this->extractEntities($snapshot['data'] ?? null),
         ];
+    }
+
+    /** @return list<string> */
+    private function extractCallParams(mixed $calls): array
+    {
+        $params = is_array($calls) && isset($calls[0]) && is_array($calls[0]) ? ($calls[0]['params'] ?? null) : null;
+        if (! is_array($params)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($params as $param) {
+            if (is_scalar($param) && ! is_bool($param)) {
+                $result[] = (string) $param;
+            }
+        }
+
+        return $result;
+    }
+
+    /** @return list<string> */
+    private function extractEntities(mixed $data): array
+    {
+        if (! is_array($data)) {
+            return [];
+        }
+
+        $entities = [];
+        foreach ($data as $key => $value) {
+            if (count($entities) >= 5) {
+                break;
+            }
+
+            $model = $this->modelReference($value);
+            if ($model !== null) {
+                $entities[] = $model;
+
+                continue;
+            }
+
+            if (is_string($key) && $this->isIdKey($key) && (is_int($value) || (is_string($value) && $value !== ''))) {
+                $entities[] = $key.'='.$value;
+            }
+        }
+
+        return $entities;
+    }
+
+    private function modelReference(mixed $value): ?string
+    {
+        if (! is_array($value) || count($value) !== 2) {
+            return null;
+        }
+
+        $meta = $value[1] ?? null;
+        if (! is_array($meta) || ($meta['s'] ?? null) !== 'mdl') {
+            return null;
+        }
+
+        $class = $meta['class'] ?? null;
+        if (! is_string($class)) {
+            return null;
+        }
+
+        $name = class_basename($class);
+        $key = $meta['key'] ?? null;
+
+        return is_scalar($key) ? sprintf('%s #%s', $name, $key) : $name;
+    }
+
+    private function isIdKey(string $key): bool
+    {
+        return (bool) preg_match('/(^id$|Id$|_id$|[Uu]lid$)/', $key);
+    }
+
+    private function truncateSql(string $sql): string
+    {
+        $sql = trim(preg_replace('/\s+/', ' ', $sql) ?? $sql);
+
+        return mb_strlen($sql) > 120 ? mb_substr($sql, 0, 119).'…' : $sql;
     }
 }

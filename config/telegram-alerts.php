@@ -16,6 +16,10 @@ return [
 
     'slow_response_exclude' => ['/health', '/up'],
 
+    'slow_query_threshold' => (int) env('TELEGRAM_SLOW_QUERY_THRESHOLD', 100),
+
+    'n_plus_one_threshold' => (int) env('TELEGRAM_N_PLUS_ONE_THRESHOLD', 100),
+
     'scheduler_heartbeat' => (bool) env('TELEGRAM_SCHEDULER_HEARTBEAT', false),
 
     'backup_path' => env('TELEGRAM_BACKUP_PATH', ''),

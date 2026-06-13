@@ -2,6 +2,24 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.7.0
+
+### Added
+
+- **Slow-response alerts now carry actionable context.** Each alert includes the authenticated user (`name · email · #id`), a DB-vs-app time split (`🗄️ DB 11ms · app 7,315ms · 32 queries`) so you can tell at a glance whether the database is the bottleneck, the slowest query when one dominates (`🐢 slowest: …`), and a `⚠️ N+1?` hint when the query count is high. For Livewire requests — which have no meaningful route — the alert shows the called method with its arguments and any bound models (`Component: participants.index::exportStartingLists(42)` / `🔗 Competition #42`) extracted from the request snapshot. Two new config keys tune the thresholds: `slow_query_threshold` (default `100` ms) and `n_plus_one_threshold` (default `100` queries).
+
+### Changed
+
+- Slow-response timing now uses the framework clock (`now()`) instead of `microtime()`. No behavioral change in production; it makes the elapsed time mockable so the test suite no longer sleeps.
+
+### Privacy
+
+- The slowest-query line logs the SQL **template only** (`?` placeholders), never bound values. Livewire extraction is limited to model references and id/ulid-named scalars — arrays, strings, and other component state are never included.
+
+### Upgrade notes
+
+No breaking changes and no required config. The new context appears automatically wherever `slow_response_threshold > 0`. Adjust `slow_query_threshold` / `n_plus_one_threshold` if the defaults are too noisy or too quiet for your app.
+
 ## v0.6.0
 
 ### Added
