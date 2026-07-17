@@ -124,6 +124,8 @@ final readonly class SlowResponseMiddleware
             $lines[] = sprintf('👤 %s', $user);
         }
 
+        $lines[] = $this->describeClient($request);
+
         if ($livewire !== null) {
             $signature = $livewire['method'];
             if ($livewire['params'] !== []) {
@@ -131,6 +133,10 @@ final readonly class SlowResponseMiddleware
             }
 
             $lines[] = sprintf('Component: <code>%s::%s</code>', e($livewire['component']), e($signature));
+
+            if ($livewire['path'] !== null) {
+                $lines[] = sprintf('🌐 <code>%s %s</code>', e($livewire['httpMethod'] ?? 'GET'), e('/'.ltrim($livewire['path'], '/')));
+            }
 
             if ($livewire['entities'] !== []) {
                 $escaped = [];
@@ -167,6 +173,11 @@ final readonly class SlowResponseMiddleware
         $lines[] = sprintf('⏱️ %s ms (threshold: %s ms)', number_format($elapsedMs), number_format($thresholdMs));
         $lines[] = sprintf('📍 %s (%s)', e($appUrl), e($appEnv));
 
+        $release = config('telegram-alerts.release');
+        if (is_string($release) && $release !== '') {
+            $lines[] = sprintf('🏷️ <code>%s</code>', e($release));
+        }
+
         $this->client->send(implode("\n", $lines));
     }
 
@@ -195,7 +206,7 @@ final readonly class SlowResponseMiddleware
         return $label;
     }
 
-    /** @return array{component: string, method: string, params: list<string>, entities: list<string>}|null */
+    /** @return array{component: string, method: string, params: list<string>, entities: list<string>, path: string|null, httpMethod: string|null}|null */
     private function extractLivewireContext(Request $request): ?array
     {
         if (! $request->isMethod('POST') || ! str_contains($request->path(), 'livewire') || ! str_ends_with($request->path(), '/update')) {
@@ -237,12 +248,35 @@ final readonly class SlowResponseMiddleware
             ? (is_array($calls[0]) ? ($calls[0]['method'] ?? null) : null)
             : null;
 
+        $path = $memo['path'] ?? null;
+        $httpMethod = $memo['method'] ?? null;
+
         return [
             'component' => $component,
             'method' => is_string($method) ? $method : '__render',
             'params' => $this->extractCallParams($calls),
             'entities' => $this->extractEntities($snapshot['data'] ?? null),
+            'path' => is_string($path) && $path !== '' ? $path : null,
+            'httpMethod' => is_string($httpMethod) ? $httpMethod : null,
         ];
+    }
+
+    private function describeClient(Request $request): string
+    {
+        $ip = $request->ip();
+        $line = '📡 '.e(is_string($ip) && $ip !== '' ? $ip : 'unknown');
+
+        $agent = $request->userAgent();
+        if (is_string($agent) && $agent !== '') {
+            $line .= ' · '.e($this->truncateUserAgent($agent));
+        }
+
+        return $line;
+    }
+
+    private function truncateUserAgent(string $agent): string
+    {
+        return mb_strlen($agent) > 80 ? mb_substr($agent, 0, 79).'…' : $agent;
     }
 
     /** @return list<string> */

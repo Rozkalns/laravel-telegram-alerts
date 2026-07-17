@@ -16,6 +16,10 @@ return [
 
     'slow_response_exclude' => ['/health', '/up'],
 
+    // Deployed release identifier (e.g. short git SHA) shown in slow-response
+    // alerts so each alert can be tied to a specific deploy. Null unless set.
+    'release' => env('TELEGRAM_ALERTS_RELEASE'),
+
     'slow_query_threshold' => (int) env('TELEGRAM_SLOW_QUERY_THRESHOLD', 100),
 
     'n_plus_one_threshold' => (int) env('TELEGRAM_N_PLUS_ONE_THRESHOLD', 100),

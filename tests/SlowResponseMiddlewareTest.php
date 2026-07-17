@@ -616,3 +616,68 @@ it('sends separate livewire alerts for different components', function (): void 
 
     Http::assertSentCount(2);
 });
+
+it('includes the client ip for guest requests', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-client-ip', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->get('/test-client-ip')->assertOk();
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '📡 127.0.0.1'));
+});
+
+it('includes and truncates a long user-agent', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-client-ua', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withHeader('User-Agent', str_repeat('A', 200))
+        ->get('/test-client-ua')->assertOk();
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], str_repeat('A', 79).'…')
+        && ! str_contains((string) $request['text'], str_repeat('A', 81)));
+});
+
+it('includes the release identifier when configured', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('telegram-alerts.release', 'a1b2c3d4');
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-release', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->get('/test-release')->assertOk();
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '🏷️ <code>a1b2c3d4</code>'));
+});
+
+it('shows the originating url for livewire requests', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->post('/livewire-url/update', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $payload = livewirePayload('public-results-content', '__lazyLoad');
+    $snapshot = json_decode((string) $payload['components'][0]['snapshot'], true);
+    $snapshot['memo']['path'] = 'competitions/lsvs-63/results';
+    $snapshot['memo']['method'] = 'GET';
+    $payload['components'][0]['snapshot'] = json_encode($snapshot);
+
+    $this->postJson('/livewire-url/update', $payload)->assertOk();
+
+    Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '🌐 <code>GET /competitions/lsvs-63/results</code>'));
+});
