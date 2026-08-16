@@ -141,6 +141,11 @@ The package should detect an IP inside Cloudflare's published ranges and say so
 - [x] Measured rather than eyeballed: a reconstruction of the 16 August alert renders at **368
       characters, down from 965** (the base64 snapshot alone was 512). The phone-screen check itself
       is the recipient's to make — the number is what the package can prove.
+- [x] **Added after review:** the originating URL now keeps its query string
+      (`…/timetable?search=892&event=DT`). Livewire's `memo.path` carries no query — verified by
+      decoding the snapshot from the reported alert — so it is read from the `Referer` header, and
+      only when that Referer's path matches the snapshot's. Capped at 100 characters. Route requests
+      already included the query via `getRequestUri()` and are unchanged.
 
 ### Phase 2 — Identify the caller
 - [x] `Support/IpIdentity`: PTR + ASN + organisation, budgeted (default 1000ms) and cached by IP for

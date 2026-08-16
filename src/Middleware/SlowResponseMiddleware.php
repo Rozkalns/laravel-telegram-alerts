@@ -163,7 +163,13 @@ final readonly class SlowResponseMiddleware
             $lines[] = sprintf('Component: <code>%s::%s</code>', e($livewire['component']), e($signature));
 
             if ($livewire['path'] !== null) {
-                $lines[] = sprintf('🌐 <code>%s %s</code>', e($livewire['httpMethod'] ?? 'GET'), e('/'.ltrim($livewire['path'], '/')));
+                $url = '/'.ltrim($livewire['path'], '/');
+
+                if ($livewire['query'] !== null) {
+                    $url .= '?'.$this->truncateQuery($livewire['query']);
+                }
+
+                $lines[] = sprintf('🌐 <code>%s %s</code>', e($livewire['httpMethod'] ?? 'GET'), e($url));
             }
 
             if ($livewire['entities'] !== []) {
@@ -234,7 +240,7 @@ final readonly class SlowResponseMiddleware
         return $label;
     }
 
-    /** @return array{component: string, method: string, params: list<string>, entities: list<string>, path: string|null, httpMethod: string|null}|null */
+    /** @return array{component: string, method: string, params: list<string>, entities: list<string>, path: string|null, query: string|null, httpMethod: string|null}|null */
     private function extractLivewireContext(Request $request): ?array
     {
         if (! $request->isMethod('POST') || ! str_contains($request->path(), 'livewire') || ! str_ends_with($request->path(), '/update')) {
@@ -278,15 +284,38 @@ final readonly class SlowResponseMiddleware
 
         $path = $memo['path'] ?? null;
         $httpMethod = $memo['method'] ?? null;
+        $path = is_string($path) && $path !== '' ? $path : null;
 
         return [
             'component' => $component,
             'method' => is_string($method) ? $method : '__render',
             'params' => $this->extractCallParams($calls),
             'entities' => $this->extractEntities($snapshot['data'] ?? null),
-            'path' => is_string($path) && $path !== '' ? $path : null,
+            'path' => $path,
+            'query' => $path === null ? null : $this->extractQuery($request, $path),
             'httpMethod' => is_string($httpMethod) ? $httpMethod : null,
         ];
+    }
+
+    private function extractQuery(Request $request, string $path): ?string
+    {
+        $referer = (string) $request->headers->get('referer');
+        if ($referer === '') {
+            return null;
+        }
+
+        $parts = parse_url($referer);
+        if ($parts === false) {
+            return null;
+        }
+
+        if (trim($parts['path'] ?? '', '/') !== trim($path, '/')) {
+            return null;
+        }
+
+        $query = $parts['query'] ?? '';
+
+        return $query === '' ? null : $query;
     }
 
     private function describeClient(Request $request, IpIdentityResult $identity): string
@@ -383,6 +412,11 @@ final readonly class SlowResponseMiddleware
     private function truncateUserAgent(string $agent): string
     {
         return mb_strlen($agent) > 80 ? mb_substr($agent, 0, 79).'…' : $agent;
+    }
+
+    private function truncateQuery(string $query): string
+    {
+        return mb_strlen($query) > 100 ? mb_substr($query, 0, 99).'…' : $query;
     }
 
     /**

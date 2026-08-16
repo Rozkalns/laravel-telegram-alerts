@@ -1013,3 +1013,109 @@ it('falls back to an unknown caller when the request carries no client ip', func
     Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '📡 unknown'));
     expect($resolver->queries)->toBe([]);
 });
+
+function postSlowLivewireFrom(string $path, array $payload, ?string $referer): TestResponse
+{
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->post($path, function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $headers = $referer === null ? [] : ['Referer' => $referer];
+
+    return test()->withHeaders($headers)->postJson($path, $payload);
+}
+
+function livewirePayloadAt(string $memoPath): array
+{
+    $payload = livewirePayload('public-timetable-content', '__lazyLoad');
+    $snapshot = json_decode((string) $payload['components'][0]['snapshot'], true);
+    $snapshot['memo']['path'] = $memoPath;
+    $snapshot['memo']['method'] = 'GET';
+    $payload['components'][0]['snapshot'] = json_encode($snapshot);
+
+    return $payload;
+}
+
+it('shows the query string from the referer alongside the livewire path', function (): void {
+    postSlowLivewireFrom(
+        '/livewire-q/update',
+        livewirePayloadAt('competitions/12-latvijas-cempionats-2026/timetable'),
+        'https://sacensibas.lvva.lv/competitions/12-latvijas-cempionats-2026/timetable?search=892&event=DT',
+    )->assertOk();
+
+    Http::assertSent(fn (ClientRequest $r): bool => str_contains(
+        (string) $r['text'],
+        '🌐 <code>GET /competitions/12-latvijas-cempionats-2026/timetable?search=892&amp;event=DT</code>',
+    ));
+});
+
+it('omits the query when the referer points at a different page', function (): void {
+    postSlowLivewireFrom(
+        '/livewire-qmismatch/update',
+        livewirePayloadAt('competitions/12-latvijas-cempionats-2026/timetable'),
+        'https://sacensibas.lvva.lv/some/other/page?search=892',
+    )->assertOk();
+
+    Http::assertSent(function (ClientRequest $r): bool {
+        $text = (string) $r['text'];
+
+        return str_contains($text, '🌐 <code>GET /competitions/12-latvijas-cempionats-2026/timetable</code>')
+            && ! str_contains($text, 'search=892');
+    });
+});
+
+it('shows the bare path when the referer carries no query string', function (): void {
+    postSlowLivewireFrom(
+        '/livewire-noq/update',
+        livewirePayloadAt('competitions/12-latvijas-cempionats-2026/timetable'),
+        'https://sacensibas.lvva.lv/competitions/12-latvijas-cempionats-2026/timetable',
+    )->assertOk();
+
+    Http::assertSent(fn (ClientRequest $r): bool => str_contains(
+        (string) $r['text'],
+        '🌐 <code>GET /competitions/12-latvijas-cempionats-2026/timetable</code>',
+    ));
+});
+
+it('shows the bare path when there is no referer at all', function (): void {
+    postSlowLivewireFrom('/livewire-noref/update', livewirePayloadAt('competitions/x/timetable'), null)->assertOk();
+
+    Http::assertSent(fn (ClientRequest $r): bool => str_contains((string) $r['text'], '🌐 <code>GET /competitions/x/timetable</code>'));
+});
+
+it('tolerates a referer that is not a parseable url', function (): void {
+    postSlowLivewireFrom('/livewire-badref/update', livewirePayloadAt('competitions/x/timetable'), 'http://:80')->assertOk();
+
+    Http::assertSent(fn (ClientRequest $r): bool => str_contains((string) $r['text'], '🌐 <code>GET /competitions/x/timetable</code>'));
+});
+
+it('matches the referer path regardless of leading and trailing slashes', function (): void {
+    postSlowLivewireFrom(
+        '/livewire-slash/update',
+        livewirePayloadAt('/competitions/x/timetable/'),
+        'https://sacensibas.lvva.lv/competitions/x/timetable?event=DT',
+    )->assertOk();
+
+    Http::assertSent(fn (ClientRequest $r): bool => str_contains((string) $r['text'], 'timetable/?event=DT'));
+});
+
+it('caps a runaway query string', function (): void {
+    $long = 'filters='.str_repeat('z', 200);
+
+    postSlowLivewireFrom(
+        '/livewire-longq/update',
+        livewirePayloadAt('competitions/x/timetable'),
+        'https://sacensibas.lvva.lv/competitions/x/timetable?'.$long,
+    )->assertOk();
+
+    Http::assertSent(function (ClientRequest $r): bool {
+        $text = (string) $r['text'];
+
+        return str_contains($text, 'filters='.str_repeat('z', 91).'…')
+            && ! str_contains($text, str_repeat('z', 101));
+    });
+});

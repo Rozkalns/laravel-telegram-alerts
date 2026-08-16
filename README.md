@@ -257,6 +257,14 @@ The slowest-query line logs the SQL template only (with `?` placeholders) — ne
 
 Method arguments are capped at 60 characters, and dropped entirely for Livewire's `__lazyLoad` — its only argument is a base64 component snapshot that can run to hundreds of opaque characters and push everything else off a phone screen.
 
+The originating URL keeps its query string, so filters and search terms are visible:
+
+```
+🌐 GET /competitions/12-latvijas-cempionats-2026/timetable?search=892&event=DT
+```
+
+A Livewire snapshot's `memo.path` carries no query string, so it is read from the `Referer` the browser sets on the `/livewire/update` request — and only when the Referer's path matches the snapshot's, so an unrelated or stale Referer can never attach someone else's query to your alert. Capped at 100 characters. Ordinary route requests already carried their query string and are unchanged.
+
 #### Who called?
 
 The caller line resolves the request IP to a hostname and network, so a 3am alert says who triggered it:
