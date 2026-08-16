@@ -9,13 +9,17 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Rozkalns\TelegramAlerts\Support\IpIdentity;
+use Rozkalns\TelegramAlerts\Support\IpIdentityResult;
 use Rozkalns\TelegramAlerts\TelegramClient;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 final readonly class SlowResponseMiddleware
 {
     public function __construct(
         private TelegramClient $client,
+        private IpIdentity $identity,
     ) {}
 
     /**
@@ -93,12 +97,37 @@ final readonly class SlowResponseMiddleware
             ? $livewire['component'].'::'.$livewire['method']
             : $request->method().$request->getRequestUri();
         $cacheKey = 'telegram_slow_'.md5($cacheKeySuffix);
+        $repeatKey = $cacheKey.'_repeats';
 
-        if (cache()->has($cacheKey)) {
+        $window = config()->integer('telegram-alerts.slow_response_dedup_window', 900);
+
+        if (! cache()->add($cacheKey, now()->getTimestamp(), $window)) {
+            $this->recordRepeat($cacheKey, $repeatKey);
+
             return;
         }
 
-        cache()->put($cacheKey, true, 300);
+        $identity = $this->identify($request);
+
+        if ($identity->isVerifiedBot()) {
+            $policy = config()->string('telegram-alerts.slow_response_bot_policy', 'alert');
+
+            if ($policy === 'ignore') {
+                cache()->put($cacheKey, true, $window);
+
+                return;
+            }
+
+            if ($policy === 'digest') {
+                cache()->put(
+                    $cacheKey,
+                    now()->getTimestamp(),
+                    config()->integer('telegram-alerts.slow_response_bot_digest_window', 3600),
+                );
+            }
+        }
+
+        $repeats = $this->pullRepeats($repeatKey);
 
         $appName = config()->string('app.name', 'Laravel');
         $appEnv = config()->string('app.env', 'production');
@@ -106,36 +135,35 @@ final readonly class SlowResponseMiddleware
 
         $seconds = number_format($elapsedMs / 1000, 1);
 
-        $queryCount = $request->attributes->getInt('_telegram_query_count');
-        $rawQueryTimeMs = $request->attributes->get('_telegram_query_time_ms', 0.0);
-        $queryTimeMs = (int) round(is_numeric($rawQueryTimeMs) ? (float) $rawQueryTimeMs : 0.0);
-
-        $slowestSql = $request->attributes->getString('_telegram_slowest_sql');
-        $rawSlowestMs = $request->attributes->get('_telegram_slowest_time_ms', 0.0);
-        $slowestTimeMs = (int) round(is_numeric($rawSlowestMs) ? (float) $rawSlowestMs : 0.0);
-
         $lines = [
             sprintf('🐌 <b>[%s]</b> Slow response (%ss)', e($appName), $seconds),
             '',
         ];
+
+        if ($repeats !== null) {
+            $lines[] = $repeats;
+        }
 
         $user = $this->describeUser();
         if ($user !== null) {
             $lines[] = sprintf('👤 %s', $user);
         }
 
-        $lines[] = $this->describeClient($request);
+        $lines[] = $this->describeClient($request, $identity);
 
         if ($livewire !== null) {
-            $signature = $livewire['method'];
-            if ($livewire['params'] !== []) {
-                $signature .= '('.implode(', ', $livewire['params']).')';
-            }
+            $signature = $this->describeSignature($livewire['method'], $livewire['params']);
 
             $lines[] = sprintf('Component: <code>%s::%s</code>', e($livewire['component']), e($signature));
 
             if ($livewire['path'] !== null) {
-                $lines[] = sprintf('🌐 <code>%s %s</code>', e($livewire['httpMethod'] ?? 'GET'), e('/'.ltrim($livewire['path'], '/')));
+                $url = '/'.ltrim($livewire['path'], '/');
+
+                if ($livewire['query'] !== null) {
+                    $url .= '?'.$this->truncate($livewire['query'], 100);
+                }
+
+                $lines[] = sprintf('🌐 <code>%s %s</code>', e($livewire['httpMethod'] ?? 'GET'), e($url));
             }
 
             if ($livewire['entities'] !== []) {
@@ -155,20 +183,7 @@ final readonly class SlowResponseMiddleware
 
         $lines[] = '';
 
-        if ($queryCount > 0) {
-            $appMs = max(0, $elapsedMs - $queryTimeMs);
-            $dbLine = sprintf('🗄️ DB %sms · app %sms · %s queries', number_format($queryTimeMs), number_format($appMs), number_format($queryCount));
-
-            if ($queryCount >= config()->integer('telegram-alerts.n_plus_one_threshold', 100)) {
-                $dbLine .= ' ⚠️ N+1?';
-            }
-
-            $lines[] = $dbLine;
-
-            if ($slowestSql !== '' && $slowestTimeMs >= config()->integer('telegram-alerts.slow_query_threshold', 100)) {
-                $lines[] = sprintf('🐢 slowest: <code>%s</code> (%s ms)', e($this->truncateSql($slowestSql)), number_format($slowestTimeMs));
-            }
-        }
+        $lines = [...$lines, ...$this->describeDatabase($request, $elapsedMs)];
 
         $lines[] = sprintf('⏱️ %s ms (threshold: %s ms)', number_format($elapsedMs), number_format($thresholdMs));
         $lines[] = sprintf('📍 %s (%s)', e($appUrl), e($appEnv));
@@ -206,7 +221,7 @@ final readonly class SlowResponseMiddleware
         return $label;
     }
 
-    /** @return array{component: string, method: string, params: list<string>, entities: list<string>, path: string|null, httpMethod: string|null}|null */
+    /** @return array{component: string, method: string, params: list<string>, entities: list<string>, path: string|null, query: string|null, httpMethod: string|null}|null */
     private function extractLivewireContext(Request $request): ?array
     {
         if (! $request->isMethod('POST') || ! str_contains($request->path(), 'livewire') || ! str_ends_with($request->path(), '/update')) {
@@ -250,33 +265,175 @@ final readonly class SlowResponseMiddleware
 
         $path = $memo['path'] ?? null;
         $httpMethod = $memo['method'] ?? null;
+        $path = is_string($path) && $path !== '' ? $path : null;
 
         return [
             'component' => $component,
             'method' => is_string($method) ? $method : '__render',
             'params' => $this->extractCallParams($calls),
             'entities' => $this->extractEntities($snapshot['data'] ?? null),
-            'path' => is_string($path) && $path !== '' ? $path : null,
+            'path' => $path,
+            'query' => $path === null ? null : $this->extractQuery($request, $path),
             'httpMethod' => is_string($httpMethod) ? $httpMethod : null,
         ];
     }
 
-    private function describeClient(Request $request): string
+    private function extractQuery(Request $request, string $path): ?string
     {
-        $ip = $request->ip();
-        $line = '📡 '.e(is_string($ip) && $ip !== '' ? $ip : 'unknown');
+        $referer = (string) $request->headers->get('referer');
+        if ($referer === '') {
+            return null;
+        }
+
+        $parts = parse_url($referer);
+        if ($parts === false) {
+            return null;
+        }
+
+        if (trim($parts['path'] ?? '', '/') !== trim($path, '/')) {
+            return null;
+        }
+
+        $query = $parts['query'] ?? '';
+
+        return $query === '' ? null : $query;
+    }
+
+    /** @return list<string> */
+    private function describeDatabase(Request $request, int $elapsedMs): array
+    {
+        $queryCount = $request->attributes->getInt('_telegram_query_count');
+        if ($queryCount === 0) {
+            return [];
+        }
+
+        $rawQueryTimeMs = $request->attributes->get('_telegram_query_time_ms', 0.0);
+        $queryTimeMs = (int) round(is_numeric($rawQueryTimeMs) ? (float) $rawQueryTimeMs : 0.0);
+
+        $line = sprintf(
+            '🗄️ DB %sms · app %sms · %s queries',
+            number_format($queryTimeMs),
+            number_format(max(0, $elapsedMs - $queryTimeMs)),
+            number_format($queryCount),
+        );
+
+        if ($queryCount >= config()->integer('telegram-alerts.n_plus_one_threshold', 100)) {
+            $line .= ' ⚠️ N+1?';
+        }
+
+        $lines = [$line];
+
+        $slowestSql = $request->attributes->getString('_telegram_slowest_sql');
+        $rawSlowestMs = $request->attributes->get('_telegram_slowest_time_ms', 0.0);
+        $slowestTimeMs = (int) round(is_numeric($rawSlowestMs) ? (float) $rawSlowestMs : 0.0);
+
+        if ($slowestSql !== '' && $slowestTimeMs >= config()->integer('telegram-alerts.slow_query_threshold', 100)) {
+            $lines[] = sprintf('🐢 slowest: <code>%s</code> (%s ms)', e($this->truncateSql($slowestSql)), number_format($slowestTimeMs));
+        }
+
+        return $lines;
+    }
+
+    private function describeClient(Request $request, IpIdentityResult $identity): string
+    {
+        $line = '📡 '.e($identity->ip);
+
+        $label = $identity->label();
+        if ($label !== null) {
+            $line .= ' · '.e($label);
+        }
+
+        if ($identity->isVerifiedBot()) {
+            return $line;
+        }
 
         $agent = $request->userAgent();
         if (is_string($agent) && $agent !== '') {
-            $line .= ' · '.e($this->truncateUserAgent($agent));
+            $line .= ' · '.e($this->truncate($agent, 80));
         }
 
         return $line;
     }
 
-    private function truncateUserAgent(string $agent): string
+    private function identify(Request $request): IpIdentityResult
     {
-        return mb_strlen($agent) > 80 ? mb_substr($agent, 0, 79).'…' : $agent;
+        $ip = $request->ip();
+        if (! is_string($ip) || $ip === '') {
+            return new IpIdentityResult('unknown');
+        }
+
+        if (! config()->boolean('telegram-alerts.identify_caller', true)) {
+            return new IpIdentityResult($ip);
+        }
+
+        try {
+            return $this->identity->identify($ip, $request->userAgent());
+        } catch (Throwable) {
+            return new IpIdentityResult($ip);
+        }
+    }
+
+    private function recordRepeat(string $cacheKey, string $repeatKey): void
+    {
+        $existing = cache()->get($repeatKey);
+
+        $count = is_array($existing) && is_int($existing['count'] ?? null) ? $existing['count'] : 0;
+        $since = is_array($existing) && is_int($existing['since'] ?? null)
+            ? $existing['since']
+            : $this->lastAlertedAt($cacheKey);
+
+        cache()->put($repeatKey, ['count' => $count + 1, 'since' => $since], $this->repeatTtl());
+    }
+
+    private function lastAlertedAt(string $cacheKey): int
+    {
+        $sentAt = cache()->get($cacheKey);
+
+        return is_int($sentAt) ? $sentAt : now()->getTimestamp();
+    }
+
+    private function repeatTtl(): int
+    {
+        $window = config()->integer('telegram-alerts.slow_response_dedup_window', 900);
+
+        if (config()->string('telegram-alerts.slow_response_bot_policy', 'alert') === 'digest') {
+            $window = max($window, config()->integer('telegram-alerts.slow_response_bot_digest_window', 3600));
+        }
+
+        return max($window * 2, 60);
+    }
+
+    private function pullRepeats(string $repeatKey): ?string
+    {
+        $existing = cache()->pull($repeatKey);
+        if (! is_array($existing) || ! is_int($existing['count'] ?? null) || $existing['count'] < 1) {
+            return null;
+        }
+
+        $times = number_format($existing['count'] + 1);
+        $since = $existing['since'] ?? null;
+        $minutes = is_int($since) ? (int) round((now()->getTimestamp() - $since) / 60) : 0;
+
+        return $minutes > 0
+            ? sprintf('🔁 ×%s in %s min', $times, number_format($minutes))
+            : sprintf('🔁 ×%s since the last alert', $times);
+    }
+
+    private function truncate(string $value, int $limit): string
+    {
+        return mb_strlen($value) > $limit ? mb_substr($value, 0, $limit - 1).'…' : $value;
+    }
+
+    /**
+     * @param  list<string>  $params
+     */
+    private function describeSignature(string $method, array $params): string
+    {
+        if ($params === [] || str_starts_with($method, '__')) {
+            return $method;
+        }
+
+        return $method.'('.$this->truncate(implode(', ', $params), 60).')';
     }
 
     /** @return list<string> */
@@ -356,6 +513,6 @@ final readonly class SlowResponseMiddleware
     {
         $sql = trim(preg_replace('/\s+/', ' ', $sql) ?? $sql);
 
-        return mb_strlen($sql) > 120 ? mb_substr($sql, 0, 119).'…' : $sql;
+        return $this->truncate($sql, 120);
     }
 }

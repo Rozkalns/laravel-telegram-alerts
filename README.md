@@ -7,7 +7,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **Error alerts** — ERROR+ log entries sent to Telegram with exception class, file, and line number
 - **Deploy notifications** — artisan command to announce successful deploys
 - **Queue failure alerts** — instant notification when a queued job fails
-- **Slow response detection** — alerts when requests exceed a configurable duration threshold, enriched with the user, a DB-vs-app time split, the slowest query, and Livewire component/model context
+- **Slow response detection** — alerts when requests exceed a configurable duration threshold, enriched with the user, a DB-vs-app time split, the slowest query, Livewire component/model context, and an identified caller (reverse DNS + ASN, with verified crawler detection)
 - **Scheduler heartbeat** — periodic ping to confirm your scheduler is alive
 - **Backup verification** — daily check that backup files exist and are recent
 - **CI pipeline notifications** — webhook endpoint for GitHub Actions (or any CI) to report build results
@@ -85,6 +85,13 @@ Enable any of these in `.env` or `config/telegram-alerts.php`:
 ```env
 # Slow response alerts — threshold in milliseconds (0 = disabled)
 TELEGRAM_SLOW_RESPONSE_THRESHOLD=2000
+
+# How long the same component/route stays deduplicated (seconds, default 900)
+TELEGRAM_SLOW_RESPONSE_DEDUP_WINDOW=900
+
+# What to do when a verified crawler triggers a slow response:
+# alert (default) | digest | ignore
+TELEGRAM_SLOW_RESPONSE_BOT_POLICY=alert
 
 # Scheduler heartbeat — sends hourly ping
 TELEGRAM_SCHEDULER_HEARTBEAT=true
@@ -248,6 +255,58 @@ Component: participants.index::exportStartingLists(42)
 
 The slowest-query line logs the SQL template only (with `?` placeholders) — never the bound values. Bound models surface as `Model #key`; id/ulid properties as `key=value`. Arrays and other state are never dumped.
 
+Method arguments are capped at 60 characters, and dropped entirely for Livewire's `__lazyLoad` — its only argument is a base64 component snapshot that can run to hundreds of opaque characters and push everything else off a phone screen.
+
+The originating URL keeps its query string, so filters and search terms are visible:
+
+```
+🌐 GET /competitions/12-latvijas-cempionats-2026/timetable?search=892&event=DT
+```
+
+A Livewire snapshot's `memo.path` carries no query string, so it is read from the `Referer` the browser sets on the `/livewire/update` request — and only when the Referer's path matches the snapshot's, so an unrelated or stale Referer can never attach someone else's query to your alert. Capped at 100 characters. Ordinary route requests already carried their query string and are unchanged.
+
+#### Who called?
+
+The caller line resolves the request IP to a hostname and network, so a 3am alert says who triggered it:
+
+```
+📡 66.249.68.38 · Googlebot (AS15169 GOOGLE) · verified
+```
+
+- **Reverse DNS (PTR)** for the hostname, and **Team Cymru's DNS zones** for the ASN and organisation. No API key, no HTTP, no third-party account.
+- **`verified` means forward-confirmed reverse DNS** — the PTR hostname was resolved back to an address and it matched. A user agent claiming to be Googlebot is trivially spoofed, and renders as `claims Googlebot · unverified` instead.
+- The user agent is omitted for a verified crawler, since Googlebot Smartphone advertises itself as a Nexus 5X — exactly the string that misleads a half-awake reader.
+- Lookups run in `terminate()`, after the response has been flushed, so the visitor never waits. Results are cached per IP for an hour, and each ASN's organisation for a week, so a crawl costs one lookup rather than one per alert. Concurrent slow requests on the same route claim the alert slot atomically, so a burst enriches once.
+- Every failure path sends the plain alert. Enrichment never delays or drops one.
+
+> **`identify_caller_budget_ms` is not a latency bound.** PHP's `dns_get_record` accepts no timeout, so the budget can stop the *next* lookup from starting but cannot interrupt one in flight — a single unanswered query still runs to the system resolver's limit (commonly 5s × 2 attempts per nameserver). `terminate()` holds the PHP-FPM worker for that time, on a request that was already slow. Set `TELEGRAM_IDENTIFY_CALLER=false` if your resolver is unreliable or worker slots are tight.
+
+> **Behind Cloudflare:** `request()->ip()` is the Cloudflare edge IP unless you have configured nginx real-ip (`CF-Connecting-IP`) **and** Laravel trusted proxies. The package detects addresses inside Cloudflare's published ranges and reports `Cloudflare edge IP — real-client-IP not configured` rather than confidently naming the wrong caller.
+
+Disable the lookups with `TELEGRAM_IDENTIFY_CALLER=false`.
+
+#### Repeat suppression
+
+The same component (or route) alerts at most once per `slow_response_dedup_window` (default 15 minutes). Suppressed repeats are **counted, not dropped** — the next alert through leads with how many it stands for:
+
+```
+🐌 [MyApp] Slow response (2.3s)
+
+🔁 ×8 in 34 min
+📡 66.249.68.38 · Googlebot (AS15169 GOOGLE) · verified
+…
+```
+
+`slow_response_bot_policy` decides what a **verified** crawler does to a slow page:
+
+| Policy | Behaviour |
+|--------|-----------|
+| `alert` (default) | Alerts normally. A crawler hitting a slow page is still a slow page. |
+| `digest` | Widens the dedup window to `slow_response_bot_digest_window` (default 1 hour); the count is still carried. |
+| `ignore` | Stays quiet. |
+
+The policy applies only to crawlers proven by forward-confirmed reverse DNS — an unverified claim is treated as an ordinary visitor, so spoofing a user agent cannot silence your alerts.
+
 ### Scheduler heartbeat
 
 ```
@@ -335,6 +394,14 @@ return [
     // Slow response threshold in ms (0 = disabled)
     'slow_response_threshold' => 0,
     'slow_response_exclude' => ['/health', '/up'],
+    // How long one component/route stays deduplicated (seconds)
+    'slow_response_dedup_window' => 900,
+    // Resolve PTR + ASN for the request IP so alerts name the caller
+    'identify_caller' => true,
+    'identify_caller_budget_ms' => 1000,
+    // Verified crawlers: 'alert' | 'digest' | 'ignore'
+    'slow_response_bot_policy' => 'alert',
+    'slow_response_bot_digest_window' => 3600,
     // Show the slowest query when it took at least this many ms
     'slow_query_threshold' => 100,
     // Flag a possible N+1 when a request runs at least this many queries
@@ -383,7 +450,7 @@ All Telegram sends go through a shared `TelegramClient`:
 Rate limiting uses the cache to deduplicate:
 - Error logs: 1 per unique message per 60 seconds
 - Queue failures: 1 per unique job+exception per 60 seconds
-- Slow responses: 1 per unique path+query per 5 minutes
+- Slow responses: 1 per unique path+query (or Livewire component+method) per `slow_response_dedup_window`, default 15 minutes — suppressed repeats are counted and carried into the next alert
 - If cache is unavailable, rate limiting is skipped and messages send anyway
 
 Scheduled commands (heartbeat, backup verification) are auto-registered via the service provider when enabled in config. They use `callAfterResolving(Schedule::class)` — no changes to your `routes/console.php` needed.

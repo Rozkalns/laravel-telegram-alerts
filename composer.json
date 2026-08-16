@@ -38,7 +38,10 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/"
-        }
+        },
+        "files": [
+            "tests/dns_shim.php"
+        ]
     },
     "extra": {
         "laravel": {
