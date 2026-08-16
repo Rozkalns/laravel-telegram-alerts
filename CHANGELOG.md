@@ -2,6 +2,44 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.9.0
+
+### Added
+
+- **Slow-response alerts identify the caller.** Each alert resolves the request IP to a hostname and network via reverse DNS and Team Cymru's DNS zones — no API key, no HTTP, no third-party account — and renders it as `📡 66.249.68.38 · Googlebot (AS15169 GOOGLE) · verified`. `verified` means **forward-confirmed reverse DNS**, the method Google and Bing both document: resolve the PTR, resolve that hostname back, require a match. A user-agent claim on its own renders as `claims Googlebot · unverified` and never counts as verified, so spoofing a user agent cannot influence alerting. The user agent is omitted for a verified crawler — Googlebot Smartphone advertises itself as a Nexus 5X, which is precisely the string that misleads a reader at 3am. Configure with `identify_caller` (default `true`) and `identify_caller_budget_ms`.
+- **Cloudflare edge detection.** An IP inside Cloudflare's published v4/v6 ranges is reported as `Cloudflare edge IP — real-client-IP not configured` instead of being confidently named as the caller. This is the package's backstop for apps behind Cloudflare that have not configured nginx real-ip and Laravel trusted proxies.
+- **Repeat suppression that counts instead of dropping.** Suppressed repeats are carried into the next alert as `🔁 ×9 in 34 min`. A silent drop is indistinguishable from a broken alerter.
+- **`slow_response_bot_policy`** — `alert` (default) | `digest` | `ignore`, applied only to *verified* crawlers. Default stays `alert`: a crawler hitting a slow page is still a slow page. `digest` widens the dedup window to `slow_response_bot_digest_window` (default 1 hour) and still carries the count.
+
+### Changed
+
+- **The slow-response dedup window is configurable and now defaults to 15 minutes** (`slow_response_dedup_window`), up from a hardcoded 5. The window is the reason near-identical alerts arrived 7–25 minutes apart overnight.
+- **Livewire method arguments no longer dominate the message.** Arguments are dropped for `__`-prefixed internals — `__lazyLoad` carries a base64 component snapshot that ran to hundreds of opaque characters, roughly 80% of the message — and capped at 60 characters for every other method. Measured on a real alert: 965 → 368 characters.
+- **The Livewire originating URL keeps its query string** (`…/timetable?search=892&event=DT`), read from the `Referer` and only when its path matches the component snapshot's. Route requests already included it.
+- `Cloudflare::contains()` uses Symfony's `IpUtils::checkIp` rather than hand-rolled CIDR matching.
+
+### Performance
+
+- Concurrent slow requests on the same route claim the alert slot atomically, so a burst enriches once rather than once per request.
+- Forward-confirmation queries a single address family instead of `DNS_A|DNS_AAAA`, which PHP issues as two sequential queries.
+- An ASN's organisation is cached per ASN for a week rather than once per IP — a crawl from one network costs one description lookup, not one per address.
+
+### Known limitation
+
+- **`identify_caller_budget_ms` is not a latency bound.** PHP's `dns_get_record` accepts no timeout, so the budget stops the *next* lookup from starting but cannot interrupt one in flight; a single unanswered query runs to the system resolver's own limit while `terminate()` holds a PHP-FPM worker. Lookups only occur when an alert is actually firing (past threshold, past dedup, cache miss), so the frequency is low — but set `TELEGRAM_IDENTIFY_CALLER=false` if your resolver is unreliable or worker slots are tight.
+
+### Upgrade notes
+
+No breaking changes and no required config. Caller identification is on by default and adds DNS lookups after the response is flushed; disable with `TELEGRAM_IDENTIFY_CALLER=false`. The dedup window widening from 5 to 15 minutes means fewer, denser alerts — each now says how many occurrences it stands for. **If you are behind Cloudflare without real-client-IP configured**, alerts will now say so explicitly rather than reporting the edge IP as the visitor.
+
+## v0.8.0
+
+### Added
+
+- **Client IP and user agent on every slow-response alert**, so anonymous traffic is identifiable — previously only authenticated users were named.
+- **Originating URL for Livewire requests**, read from the snapshot's `memo.path`, instead of the opaque `/livewire/update` path.
+- **Optional release identifier** (`telegram-alerts.release`, `TELEGRAM_ALERTS_RELEASE`), intended to hold the deployed git SHA so an alert can be tied to a specific deploy.
+
 ## v0.7.0
 
 ### Added
