@@ -27,38 +27,27 @@ final readonly class IpIdentityResult
             return 'Cloudflare edge IP — real-client-IP not configured';
         }
 
-        $name = null;
-        if ($this->bot !== null) {
-            $name = $this->verified ? $this->bot : 'claims '.$this->bot;
-        } elseif ($this->hostname !== null) {
-            $name = $this->hostname;
-        }
+        $name = match (true) {
+            $this->bot === null => $this->hostname,
+            $this->verified => $this->bot,
+            default => 'claims '.$this->bot,
+        };
 
         $network = $this->network();
 
-        $identity = match (true) {
-            $name !== null && $network !== null => $name.' ('.$network.')',
-            $name !== null => $name,
-            default => $network,
-        };
-
-        if ($identity === null) {
-            return null;
+        if ($name === null) {
+            return $network;
         }
 
-        if ($this->bot !== null) {
-            $identity .= $this->verified ? ' · verified' : ' · unverified';
-        }
+        $identity = $network === null ? $name : $name.' ('.$network.')';
 
-        return $identity;
+        return $this->bot === null ? $identity : $identity.($this->verified ? ' · verified' : ' · unverified');
     }
 
     private function network(): ?string
     {
-        if ($this->asn === null) {
-            return $this->organisation;
-        }
+        $parts = array_filter([$this->asn, $this->organisation]);
 
-        return $this->organisation === null ? $this->asn : $this->asn.' '.$this->organisation;
+        return $parts === [] ? null : implode(' ', $parts);
     }
 }

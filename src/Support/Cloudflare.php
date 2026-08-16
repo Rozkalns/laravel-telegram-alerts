@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rozkalns\TelegramAlerts\Support;
 
+use Symfony\Component\HttpFoundation\IpUtils;
+
 /**
  * @see https://www.cloudflare.com/ips/
  */
@@ -37,37 +39,6 @@ final class Cloudflare
 
     public static function contains(string $ip): bool
     {
-        $address = @inet_pton($ip);
-        if ($address === false) {
-            return false;
-        }
-
-        return array_any(self::RANGES, fn (string $range): bool => self::matches($address, $range));
-    }
-
-    private static function matches(string $address, string $range): bool
-    {
-        [$subnet, $bits] = explode('/', $range);
-
-        $network = @inet_pton($subnet);
-        if ($network === false || strlen($network) !== strlen($address)) {
-            return false;
-        }
-
-        $prefix = (int) $bits;
-        $wholeBytes = intdiv($prefix, 8);
-
-        if ($wholeBytes > 0 && strncmp($address, $network, $wholeBytes) !== 0) {
-            return false;
-        }
-
-        $remainingBits = $prefix % 8;
-        if ($remainingBits === 0) {
-            return true;
-        }
-
-        $mask = ~((1 << (8 - $remainingBits)) - 1) & 0xFF;
-
-        return (ord($address[$wholeBytes]) & $mask) === (ord($network[$wholeBytes]) & $mask);
+        return IpUtils::checkIp($ip, self::RANGES);
     }
 }

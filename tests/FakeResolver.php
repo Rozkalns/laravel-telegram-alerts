@@ -44,7 +44,7 @@ final class FakeResolver implements Resolver
     }
 
     /** @return list<string> */
-    public function addresses(string $host): array
+    public function addresses(string $host, bool $ipv6 = false): array
     {
         $this->record($host);
 

@@ -242,6 +242,29 @@ not route through it (see Corrections), and enrichment sits in `terminate()` ins
 
 ## Follow-ups (not done here — out of this item's scope)
 
+- **The DNS budget is not a latency bound, and that is the one real risk in this item.**
+  `identify_caller_budget_ms` is checked *between* resolver calls, so it caps how many sequential
+  queries run — it cannot interrupt one in flight, because `dns_get_record` takes no timeout. A single
+  unanswered query runs to the system resolver's limit (commonly 5s × 2 attempts per nameserver) while
+  `terminate()` holds a PHP-FPM worker, on a request that was already slow. Mitigated here by cutting
+  the query count (address-family narrowing, per-ASN caching, atomic slot claim) and by saying so
+  plainly in config and README, but not *fixed*. The real fix is to move enrichment onto the queue —
+  `SendTelegramMessageJob` already exists and is `ShouldQueue`; the alert would be dispatched with the
+  IP and enriched on a worker. Worth doing before this is enabled anywhere with tight worker slots.
+- **Extract a shared `AlertThrottle`.** Cache-based rate limiting now exists three times:
+  `TelegramHandler` (60s, silent drop), `QueueFailureListener` (60s, silent drop), and this middleware
+  (configurable, counts repeats). Rule of three is satisfied, and the error path — the noisiest of the
+  three — is the one that would most benefit from "🔁 ×9 in 34 min". Deliberately not extracted in
+  this item: migrating the other two changes their message content, which this item scoped out, and
+  extracting an interface for consumers that stay unmigrated designs against hypotheticals. Do it as
+  one change that moves all three.
+- **`slow_response_bot_policy` is a bare string** compared against literals in two places, so a typo
+  in the env var silently means `alert`. A backed enum with `tryFrom() ?? Alert` is the fix; worth
+  folding into the throttle extraction rather than doing alone.
+- **`IpIdentityResult::label()` hardcodes Telegram-alert copy** — specifically the Cloudflare edge
+  sentence. `2026-06-14-incident-triage-page.md` renders the same fact differently (a red warning
+  block). One string, one consumer today; split rendering out when the second consumer lands.
+
 - **The user-agent line is still the longest field for human visitors** (80 chars, wrapping to two
   lines on a phone). Dropping it for verified crawlers helped the crawler case only. Worth a separate
   look at whether a parsed "iPhone · Safari" beats the raw string.

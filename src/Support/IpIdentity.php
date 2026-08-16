@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rozkalns\TelegramAlerts\Support;
 
+use Illuminate\Support\Str;
+
 final readonly class IpIdentity
 {
     /**
@@ -25,6 +27,7 @@ final readonly class IpIdentity
         private Resolver $resolver,
         private int $budgetMs = 1000,
         private int $cacheTtl = 3600,
+        private int $asnCacheTtl = 604800,
     ) {}
 
     public function identify(string $ip, ?string $userAgent = null): IpIdentityResult
@@ -49,7 +52,6 @@ final readonly class IpIdentity
 
         if ($bot === null) {
             $bot = $this->botFromUserAgent($userAgent);
-            $verified = false;
         }
 
         return new IpIdentityResult(
@@ -76,7 +78,7 @@ final readonly class IpIdentity
             $bot = $this->botFromHostname($hostname);
 
             if ($bot !== null && $this->withinBudget($startedAt)) {
-                $verified = $this->forwardConfirms($hostname, $ip);
+                $verified = $this->forwardConfirms($hostname, $ip, str_contains($ip, ':'));
             }
         }
 
@@ -130,26 +132,30 @@ final readonly class IpIdentity
             return [$asn, null];
         }
 
-        $description = $this->resolver->txt('AS'.$number.'.asn.cymru.com');
-        if ($description === []) {
-            return [$asn, null];
-        }
+        return [$asn, $this->organisationOf($number)];
+    }
 
-        return [$asn, $this->organisationFrom($description[0])];
+    private function organisationOf(string $number): ?string
+    {
+        /** @var string|null $organisation */
+        $organisation = cache()->remember(
+            'telegram_asn_'.$number,
+            $this->asnCacheTtl,
+            function () use ($number): ?string {
+                $description = $this->resolver->txt('AS'.$number.'.asn.cymru.com');
+
+                return $description === [] ? null : $this->organisationFrom($description[0]);
+            },
+        );
+
+        return $organisation;
     }
 
     private function organisationFrom(string $record): ?string
     {
-        $fields = explode('|', $record);
-        $name = trim($fields[count($fields) - 1]);
+        $name = trim(Str::afterLast($record, '|'));
 
-        if ($name === '') {
-            return null;
-        }
-
-        $comma = mb_strrpos($name, ',');
-
-        return $comma === false ? $name : trim(mb_substr($name, 0, $comma));
+        return $name === '' ? null : trim(Str::beforeLast($name, ','));
     }
 
     private function botFromHostname(string $hostname): ?string
@@ -180,11 +186,11 @@ final readonly class IpIdentity
         return null;
     }
 
-    private function forwardConfirms(string $hostname, string $ip): bool
+    private function forwardConfirms(string $hostname, string $ip, bool $ipv6): bool
     {
         $expected = (string) inet_pton($ip);
 
-        foreach ($this->resolver->addresses($hostname) as $address) {
+        foreach ($this->resolver->addresses($hostname, $ipv6) as $address) {
             $resolved = (string) @inet_pton($address);
 
             if ($resolved !== '' && $resolved === $expected) {

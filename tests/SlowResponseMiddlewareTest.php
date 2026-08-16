@@ -1119,3 +1119,38 @@ it('caps a runaway query string', function (): void {
             && ! str_contains($text, str_repeat('z', 101));
     });
 });
+
+it('drops arguments for any livewire internal method, not just lazy load', function (): void {
+    postSlowLivewire(
+        '/livewire-internal/update',
+        livewirePayload('public-timetable-content', '__dispatch', params: [str_repeat('q', 300)]),
+    )->assertOk();
+
+    Http::assertSent(function (ClientRequest $r): bool {
+        $text = (string) $r['text'];
+
+        return str_contains($text, 'Component: <code>public-timetable-content::__dispatch</code>')
+            && ! str_contains($text, 'qqq');
+    });
+});
+
+it('enriches once when several slow requests race on the same component', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    $resolver = googlebotResolver();
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-herd', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    foreach (range(1, 4) as $ignored) {
+        $this->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])->get('/test-herd')->assertOk();
+    }
+
+    Http::assertSentCount(1);
+
+    $ptrLookups = array_filter($resolver->queries, fn (string $q): bool => str_ends_with($q, '.in-addr.arpa'));
+
+    expect($ptrLookups)->toHaveCount(1);
+});

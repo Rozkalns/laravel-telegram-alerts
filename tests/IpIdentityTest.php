@@ -236,3 +236,28 @@ it('labels an organisation known without an asn', function (): void {
 
     expect($result->label())->toBe('EXAMPLE');
 });
+
+it('resolves an asn description once and reuses it for other ips on that network', function (): void {
+    $resolver = fakeResolver();
+    $resolver->txt['1.2.0.192.origin.asn.cymru.com'] = ['64496 | 192.0.2.0/24 | US | arin | 2006-09-13'];
+    $resolver->txt['2.2.0.192.origin.asn.cymru.com'] = ['64496 | 192.0.2.0/24 | US | arin | 2006-09-13'];
+    $resolver->txt['AS64496.asn.cymru.com'] = ['64496 | US | arin | 2010-01-01 | EXAMPLE, US'];
+
+    $identity = identity($resolver);
+
+    expect($identity->identify('192.0.2.1')->organisation)->toBe('EXAMPLE')
+        ->and($identity->identify('192.0.2.2')->organisation)->toBe('EXAMPLE');
+
+    $descriptionLookups = array_filter($resolver->queries, fn (string $q): bool => $q === 'AS64496.asn.cymru.com');
+
+    expect($descriptionLookups)->toHaveCount(1);
+});
+
+it('confirms an ipv6 caller against aaaa records only', function (): void {
+    $resolver = fakeResolver();
+    $reversed = '0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2';
+    $resolver->ptr[$reversed.'.ip6.arpa'] = 'crawl.googlebot.com';
+    $resolver->addresses['crawl.googlebot.com'] = ['2001:db8::'];
+
+    expect(identity($resolver)->identify('2001:db8::')->isVerifiedBot())->toBeTrue();
+});

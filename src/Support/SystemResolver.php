@@ -33,15 +33,13 @@ final class SystemResolver implements Resolver
     }
 
     /** @return list<string> */
-    public function addresses(string $host): array
+    public function addresses(string $host, bool $ipv6 = false): array
     {
         $addresses = [];
-        foreach ($this->query($host, DNS_A | DNS_AAAA) as $record) {
-            foreach (['ip', 'ipv6'] as $key) {
-                $value = $record[$key] ?? null;
-                if (is_string($value) && $value !== '') {
-                    $addresses[] = $value;
-                }
+        foreach ($this->query($host, $ipv6 ? DNS_AAAA : DNS_A) as $record) {
+            $value = $record['ip'] ?? $record['ipv6'] ?? null;
+            if (is_string($value) && $value !== '') {
+                $addresses[] = $value;
             }
         }
 

@@ -276,8 +276,10 @@ The caller line resolves the request IP to a hostname and network, so a 3am aler
 - **Reverse DNS (PTR)** for the hostname, and **Team Cymru's DNS zones** for the ASN and organisation. No API key, no HTTP, no third-party account.
 - **`verified` means forward-confirmed reverse DNS** — the PTR hostname was resolved back to an address and it matched. A user agent claiming to be Googlebot is trivially spoofed, and renders as `claims Googlebot · unverified` instead.
 - The user agent is omitted for a verified crawler, since Googlebot Smartphone advertises itself as a Nexus 5X — exactly the string that misleads a half-awake reader.
-- Lookups run in `terminate()`, after the response has been flushed, under a total budget (default 1000ms) and cached per IP for an hour.
+- Lookups run in `terminate()`, after the response has been flushed, so the visitor never waits. Results are cached per IP for an hour, and each ASN's organisation for a week, so a crawl costs one lookup rather than one per alert. Concurrent slow requests on the same route claim the alert slot atomically, so a burst enriches once.
 - Every failure path sends the plain alert. Enrichment never delays or drops one.
+
+> **`identify_caller_budget_ms` is not a latency bound.** PHP's `dns_get_record` accepts no timeout, so the budget can stop the *next* lookup from starting but cannot interrupt one in flight — a single unanswered query still runs to the system resolver's limit (commonly 5s × 2 attempts per nameserver). `terminate()` holds the PHP-FPM worker for that time, on a request that was already slow. Set `TELEGRAM_IDENTIFY_CALLER=false` if your resolver is unreliable or worker slots are tight.
 
 > **Behind Cloudflare:** `request()->ip()` is the Cloudflare edge IP unless you have configured nginx real-ip (`CF-Connecting-IP`) **and** Laravel trusted proxies. The package detects addresses inside Cloudflare's published ranges and reports `Cloudflare edge IP — real-client-IP not configured` rather than confidently naming the wrong caller.
 

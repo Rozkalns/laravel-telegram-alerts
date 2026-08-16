@@ -24,7 +24,12 @@ return [
     // lookups after the response has been flushed; results are cached per IP.
     'identify_caller' => (bool) env('TELEGRAM_IDENTIFY_CALLER', true),
 
-    // Total budget for those lookups, checked between queries.
+    // Caps how many *further* lookups are attempted once this much time has
+    // already been spent. It is NOT a latency bound: PHP's dns_get_record takes
+    // no timeout, so a single unanswered query still runs to the system
+    // resolver's own limit (commonly 5s x 2 attempts per nameserver) no matter
+    // what this is set to. It bounds the number of sequential queries, not one
+    // hanging query. Set identify_caller to false if that is unacceptable.
     'identify_caller_budget_ms' => (int) env('TELEGRAM_IDENTIFY_CALLER_BUDGET_MS', 1000),
 
     // What to do when a *verified* crawler (forward-confirmed reverse DNS)

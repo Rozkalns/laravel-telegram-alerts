@@ -59,17 +59,26 @@ it('returns no txt values when the query fails', function (): void {
     expect(new SystemResolver()->txt('origin.asn.cymru.com'))->toBe([]);
 });
 
-it('collects both a and aaaa addresses', function (): void {
+it('asks only for the address family it was given', function (): void {
     DnsShim::$records = [
         ['type' => 'A', 'ip' => '66.249.68.38'],
-        ['type' => 'AAAA', 'ipv6' => '2001:db8::1'],
         ['type' => 'A', 'ip' => ''],
         ['type' => 'A'],
     ];
 
     expect(new SystemResolver()->addresses('crawl.googlebot.com'))
-        ->toBe(['66.249.68.38', '2001:db8::1'])
-        ->and(DnsShim::$calls)->toBe([['crawl.googlebot.com', DNS_A | DNS_AAAA]]);
+        ->toBe(['66.249.68.38'])
+        ->and(DnsShim::$calls)->toBe([['crawl.googlebot.com', DNS_A]]);
+});
+
+it('asks for aaaa records when confirming an ipv6 caller', function (): void {
+    DnsShim::$records = [
+        ['type' => 'AAAA', 'ipv6' => '2001:db8::1'],
+    ];
+
+    expect(new SystemResolver()->addresses('v6.example.org', true))
+        ->toBe(['2001:db8::1'])
+        ->and(DnsShim::$calls)->toBe([['v6.example.org', DNS_AAAA]]);
 });
 
 it('returns no addresses when the forward query fails', function (): void {
