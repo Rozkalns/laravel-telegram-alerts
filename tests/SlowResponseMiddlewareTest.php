@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Closure;
 use Illuminate\Auth\GenericUser;
+use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -680,4 +681,335 @@ it('shows the originating url for livewire requests', function (): void {
     $this->postJson('/livewire-url/update', $payload)->assertOk();
 
     Http::assertSent(fn ($request): bool => str_contains((string) $request['text'], '🌐 <code>GET /competitions/lsvs-63/results</code>'));
+});
+
+it('drops the base64 snapshot from a lazy-load component signature', function (): void {
+    $snapshot = base64_encode(str_repeat('{"data":{"forMount":[{"competition":[null]}]}}', 20));
+
+    postSlowLivewire(
+        '/livewire-lazy/update',
+        livewirePayload('public-timetable-content', '__lazyLoad', params: [$snapshot]),
+    )->assertOk();
+
+    Http::assertSent(function (ClientRequest $request) use ($snapshot): bool {
+        $text = (string) $request['text'];
+
+        return str_contains($text, 'Component: <code>public-timetable-content::__lazyLoad</code>')
+            && ! str_contains($text, $snapshot)
+            && ! str_contains($text, '__lazyLoad(');
+    });
+});
+
+it('keeps the whole alert readable when a lazy-load snapshot is present', function (): void {
+    $snapshot = base64_encode(str_repeat('a', 700));
+
+    postSlowLivewire(
+        '/livewire-length/update',
+        livewirePayload('public-timetable-content', '__lazyLoad', params: [$snapshot]),
+    )->assertOk();
+
+    Http::assertSent(fn ($request): bool => mb_strlen((string) $request['text']) < 400);
+});
+
+it('truncates a long parameter list instead of dropping it', function (): void {
+    postSlowLivewire(
+        '/livewire-longparams/update',
+        livewirePayload('participants.index', 'export', params: [str_repeat('x', 200)]),
+    )->assertOk();
+
+    Http::assertSent(function (ClientRequest $request): bool {
+        $text = (string) $request['text'];
+
+        return str_contains($text, 'participants.index::export('.str_repeat('x', 59).'…)')
+            && ! str_contains($text, str_repeat('x', 61));
+    });
+});
+
+it('leaves a short parameter list exactly as it was', function (): void {
+    postSlowLivewire(
+        '/livewire-shortparams/update',
+        livewirePayload('participants.index', 'exportStartingLists', params: [42]),
+    )->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], 'Component: <code>participants.index::exportStartingLists(42)</code>'));
+});
+
+it('names a verified crawler and drops its misleading user agent', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    googlebotResolver();
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-bot', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])
+        ->withHeaders(['User-Agent' => 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P)'])
+        ->get('/test-bot')
+        ->assertOk();
+
+    Http::assertSent(function (ClientRequest $request): bool {
+        $text = (string) $request['text'];
+
+        return str_contains($text, '📡 66.249.68.38 · Googlebot (AS15169 GOOGLE) · verified')
+            && ! str_contains($text, 'Nexus 5X');
+    });
+});
+
+it('keeps the user agent when the crawler claim is unverified', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-fakebot', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.5'])
+        ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; Googlebot/2.1)'])
+        ->get('/test-fakebot')
+        ->assertOk();
+
+    Http::assertSent(function (ClientRequest $request): bool {
+        $text = (string) $request['text'];
+
+        return str_contains($text, 'claims Googlebot · unverified')
+            && str_contains($text, 'Mozilla/5.0 (compatible; Googlebot/2.1)');
+    });
+});
+
+it('reports a cloudflare edge address as a misconfiguration', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-edge', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => '172.68.1.1'])->get('/test-edge')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains(
+        (string) $r['text'],
+        '📡 172.68.1.1 · Cloudflare edge IP — real-client-IP not configured',
+    ));
+});
+
+it('still sends the alert when identity lookups blow up', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    fakeResolver()->throws = true;
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-dnsfail', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])->get('/test-dnsfail')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '📡 66.249.68.38')
+        && str_contains((string) $r['text'], 'Slow response'));
+});
+
+it('skips identity lookups entirely when the feature is turned off', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('telegram-alerts.identify_caller', false);
+
+    $resolver = googlebotResolver();
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-noidentity', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])->get('/test-noidentity')->assertOk();
+
+    Http::assertSent(fn ($r): bool => ! str_contains((string) $r['text'], 'Googlebot'));
+    expect($resolver->queries)->toBe([]);
+});
+
+it('honours a configured deduplication window', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('telegram-alerts.slow_response_dedup_window', 900);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-window', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $start = Carbon::create(2026, 8, 16, 0, 0, 0);
+
+    Carbon::setTestNow($start);
+    $this->get('/test-window')->assertOk();
+
+    Carbon::setTestNow($start->copy()->addMinutes(8));
+    $this->get('/test-window')->assertOk();
+
+    Http::assertSentCount(1);
+});
+
+it('carries the count of suppressed repeats into the next alert', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('telegram-alerts.slow_response_dedup_window', 900);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-repeats', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $start = Carbon::create(2026, 8, 16, 0, 0, 0);
+
+    Carbon::setTestNow($start);
+    $this->get('/test-repeats')->assertOk();
+
+    Carbon::setTestNow($start->copy()->addMinutes(5));
+    $this->get('/test-repeats')->assertOk();
+
+    Carbon::setTestNow($start->copy()->addMinutes(10));
+    $this->get('/test-repeats')->assertOk();
+
+    Carbon::setTestNow($start->copy()->addMinutes(20));
+    $this->get('/test-repeats')->assertOk();
+
+    Http::assertSentCount(2);
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '🔁 ×3 in 20 min'));
+});
+
+it('does not mark the first alert as a repeat', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-first', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->get('/test-first')->assertOk();
+
+    Http::assertSent(fn ($r): bool => ! str_contains((string) $r['text'], '🔁'));
+});
+
+it('counts a repeat without a time span when the window is sub-minute', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('telegram-alerts.slow_response_dedup_window', 1);
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-fastrepeat', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $start = Carbon::create(2026, 8, 16, 0, 0, 0);
+
+    Carbon::setTestNow($start);
+    $this->get('/test-fastrepeat')->assertOk();
+
+    Carbon::setTestNow($start->copy()->addMilliseconds(500));
+    $this->get('/test-fastrepeat')->assertOk();
+
+    Carbon::setTestNow($start->copy()->addSeconds(2));
+    $this->get('/test-fastrepeat')->assertOk();
+
+    Http::assertSentCount(2);
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '🔁 ×2 since the last alert'));
+});
+
+function getSlowAsGooglebot(string $path): TestResponse
+{
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    googlebotResolver();
+
+    Route::middleware(SlowResponseMiddleware::class)->get($path, function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    return test()->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])->get($path);
+}
+
+it('alerts for a verified crawler by default', function (): void {
+    getSlowAsGooglebot('/test-policy-default')->assertOk();
+
+    Http::assertSentCount(1);
+});
+
+it('stays quiet for a verified crawler under the ignore policy', function (): void {
+    config()->set('telegram-alerts.slow_response_bot_policy', 'ignore');
+
+    getSlowAsGooglebot('/test-policy-ignore')->assertOk();
+
+    Http::assertNothingSent();
+});
+
+it('does not re-run lookups for a crawler it has already decided to ignore', function (): void {
+    config()->set('telegram-alerts.slow_response_bot_policy', 'ignore');
+
+    getSlowAsGooglebot('/test-policy-ignore-twice')->assertOk();
+    $afterFirst = count(fakeResolver()->queries);
+
+    test()->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])->get('/test-policy-ignore-twice')->assertOk();
+
+    expect(fakeResolver()->queries)->toHaveCount($afterFirst);
+    Http::assertNothingSent();
+});
+
+it('widens the window for a verified crawler under the digest policy', function (): void {
+    config()->set('telegram-alerts.slow_response_bot_policy', 'digest');
+    config()->set('telegram-alerts.slow_response_dedup_window', 900);
+    config()->set('telegram-alerts.slow_response_bot_digest_window', 3600);
+
+    $start = Carbon::create(2026, 8, 16, 0, 0, 0);
+    Carbon::setTestNow($start);
+
+    getSlowAsGooglebot('/test-policy-digest')->assertOk();
+
+    Carbon::setTestNow($start->copy()->addMinutes(30));
+    test()->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])->get('/test-policy-digest')->assertOk();
+
+    Http::assertSentCount(1);
+
+    Carbon::setTestNow($start->copy()->addMinutes(70));
+    test()->withServerVariables(['REMOTE_ADDR' => '66.249.68.38'])->get('/test-policy-digest')->assertOk();
+
+    Http::assertSentCount(2);
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '🔁 ×2 in 70 min'));
+});
+
+it('applies the bot policy only to verified crawlers', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    config()->set('telegram-alerts.slow_response_bot_policy', 'ignore');
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-policy-claim', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.5'])
+        ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; Googlebot/2.1)'])
+        ->get('/test-policy-claim')
+        ->assertOk();
+
+    Http::assertSentCount(1);
+});
+
+it('falls back to an unknown caller when the request carries no client ip', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    $resolver = googlebotResolver();
+
+    Route::middleware(SlowResponseMiddleware::class)->get('/test-noip', function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    $this->withServerVariables(['REMOTE_ADDR' => null])->get('/test-noip')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '📡 unknown'));
+    expect($resolver->queries)->toBe([]);
 });

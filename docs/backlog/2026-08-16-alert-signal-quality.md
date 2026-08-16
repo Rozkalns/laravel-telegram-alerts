@@ -1,6 +1,23 @@
 # Slow-Response Alerts: Identify The Caller, Shorten The Message, Stop Repeating
-Priority: Medium | Status: Not started
+Priority: Medium | Status: Done (2026-08-16)
 Dependencies: real-client-IP capture behind Cloudflare (per app — see the note in 2026-06-14-incident-triage-page.md)
+
+## Corrections to this spec (2026-08-16, found while implementing)
+
+Two load-bearing claims below were wrong. They are struck through in place; recording them here
+because both changed what the work actually was.
+
+1. **"Nothing deduplicates" was false.** `SlowResponseMiddleware` already deduplicated at `:97-101`,
+   keyed on `component::method` (Livewire) or `method + URI`, with a **hardcoded 300-second window** —
+   and the README documented it ("Slow responses: 1 per unique path+query per 5 minutes"). The
+   15–16 August alerts were 7–25 minutes apart, so every one of them cleared a window that was simply
+   too short. Phase 3 was therefore *widen, make configurable, and add a count*, not *build dedup*.
+2. **The "alerting is already asynchronous" justification was wrong.** `SendTelegramMessageJob` does
+   implement `ShouldQueue`, but `SlowResponseMiddleware` never uses it — it calls
+   `$this->client->send()` synchronously at `:181`. The conclusion still holds for a different reason:
+   the send happens in `terminate()`, which runs after the response is flushed, so the visitor waits
+   for nothing. But the PHP-FPM worker *is* held for the duration, which makes the timebox and the
+   cache more important than this spec implied, not less.
 
 ## Background
 
@@ -33,10 +50,12 @@ message — pushing the timing figures, the URL and the release below the fold o
 agent is already truncated at 80 characters (`:279`) and the slow SQL at 120 (`:359`); the component
 signature is the one unbounded field left.
 
-**Nothing deduplicates.** The same component, on the same route, breaching the same threshold, sends a
-fresh message every time. During the crawl above that meant eight near-identical alerts about one
-already-known problem, overnight. Alerts that repeat without adding information are how a channel gets
-muted — and a muted channel is worse than no channel, because it still looks like coverage.
+~~**Nothing deduplicates.**~~ *(Wrong — see Corrections.)* **Dedup exists but its window is too
+short.** The same component, on the same route, breaching the same threshold, is suppressed for only
+300 seconds. During the crawl above the hits were 7–25 minutes apart, so all eight got through:
+near-identical alerts about one already-known problem, overnight. Alerts that repeat without adding
+information are how a channel gets muted — and a muted channel is worse than no channel, because it
+still looks like coverage.
 
 Worth stating plainly: **those alerts were correct.** The page really was slow. This item is about
 signal quality, not about suppressing a true alarm.
@@ -67,9 +86,11 @@ Target rendering:
 🛰️ 66.249.68.38 · Googlebot (AS15169 Google) · verified
 ```
 
-**This is safe to add because alerting is already asynchronous.** `SendTelegramMessageJob` implements
-`ShouldQueue`, so enrichment happens after the response has been sent and costs the request nothing.
-It must still be timeboxed and cached — a hanging DNS lookup inside a queue worker is its own outage.
+**This is safe to add because the send already happens after the response is flushed.** ~~`SendTelegramMessageJob`
+implements `ShouldQueue`, so enrichment happens after the response has been sent~~ *(wrong — the
+middleware sends synchronously; see Corrections)*. The send runs in `terminate()`, so the visitor
+waits for nothing — but the worker is held, so enrichment must be timeboxed and cached. A hanging DNS
+lookup inside a terminating request is its own outage.
 
 ### The Cloudflare caveat
 
@@ -115,36 +136,80 @@ The package should detect an IP inside Cloudflare's published ranges and say so
 ## Implementation
 
 ### Phase 1 — Bound the message
-- [ ] Truncate the Livewire parameter list in the component signature, or omit parameters entirely for
-      `__lazyLoad`, keeping `component::method` which is the part with meaning
-- [ ] Confirm a real alert fits in a phone notification without scrolling
+- [x] Omit parameters entirely for `__lazyLoad`, keeping `component::method`; cap every other
+      method's argument list at 60 characters (`SlowResponseMiddleware::describeSignature`)
+- [x] Measured rather than eyeballed: a reconstruction of the 16 August alert renders at **368
+      characters, down from 965** (the base64 snapshot alone was 512). The phone-screen check itself
+      is the recipient's to make — the number is what the package can prove.
 
 ### Phase 2 — Identify the caller
-- [ ] `IpIdentity` service: PTR + ASN + organisation, timeboxed (~1s total) and cached by IP
-- [ ] IPv6 support — the nibble-reversal against `origin6.asn.cymru.com` in `platform-probe.sh` is the
-      reference implementation, including the trap that v4-style reversal silently yields garbage
-- [ ] Bot classification with forward-confirmed reverse DNS for Googlebot and Bingbot
-- [ ] Cloudflare-range detection → report "edge IP, real-client-IP not configured"
-- [ ] Degrade gracefully: a failed or slow lookup sends the plain alert, never delays or drops it
+- [x] `Support/IpIdentity`: PTR + ASN + organisation, budgeted (default 1000ms) and cached by IP for
+      an hour. Cached by IP *alone* — the DNS facts do not vary by user agent, and a crawl is many
+      hits from few addresses.
+- [x] IPv6 nibble-reversal for `ip6.arpa` and `origin6.asn.cymru.com`. The trap is real: the first
+      version of the *test* used v4-style reversal and failed against a correct implementation.
+- [x] Forward-confirmed reverse DNS for Googlebot and Bingbot; a user-agent match alone renders as
+      `claims X · unverified` and never counts as verified
+- [x] `Support/Cloudflare::contains` (v4 + v6 CIDR) → `Cloudflare edge IP — real-client-IP not
+      configured`, with no lookups attempted
+- [x] Degrades gracefully: `Throwable` from the resolver, a missing client IP, or
+      `identify_caller=false` all send the plain alert
 
 ### Phase 3 — Stop repeating
-- [ ] Dedup key: alert type + component + route; configurable window, default ~15 min
-- [ ] Suppressed repeats increment a counter surfaced in the next message ("×8 in 30 min") — a silent
-      drop is indistinguishable from a broken alerter
+- [x] Kept the existing dedup key (Livewire `component::method`, otherwise `method + URI`) and made
+      the window configurable: `slow_response_dedup_window`, default 900s — see Open Questions for
+      why the key was left alone
+- [x] Suppressed repeats increment a counter surfaced in the next message as `🔁 ×9 in 34 min`
+      (total occurrences, including the one being reported)
+- [x] Identity is resolved *after* the dedup check, so a suppressed repeat costs no DNS
 
 ### Phase 4 — Bot policy
-- [ ] `slow_response_bot_policy`: `alert` (default) | `digest` | `ignore`
-- [ ] Follows the existing config conventions (`slow_response_exclude`, `slow_query_threshold`,
-      `n_plus_one_threshold`)
+- [x] `slow_response_bot_policy`: `alert` (default) | `digest` | `ignore`, applied only to **verified**
+      crawlers — spoofing a user agent cannot silence alerts
+- [x] `digest` implemented without storage or a scheduler: it widens the dedup window to
+      `slow_response_bot_digest_window` (default 3600s) and still carries the count. This is a
+      decision the spec left open; a true scheduled digest would have needed the persistence this
+      item puts out of scope.
+- [x] Follows the existing config conventions
+
+## Outcome
+
+All six quality gates pass: 100% code coverage, 100% type coverage, zero pint/phpstan/rector/peck
+findings. 244 tests, up from 170.
+
+New files: `src/Support/{IpIdentity,IpIdentityResult,Resolver,SystemResolver,Cloudflare}.php`.
+
+Two things worth carrying elsewhere:
+
+- **The suite was silently hitting real DNS** the moment enrichment landed (run time went 0.52s →
+  1.01s). `TestCase::setUp` now binds a `FakeResolver` for every test, so no test can reach the
+  network. `SystemResolver` — the one class that genuinely calls `dns_get_record` — is covered by
+  shadowing that function in the package's own namespace (`tests/dns_shim.php`, loaded via
+  `autoload-dev.files`). Any future package code doing I/O needs the same treatment to hold 100%
+  coverage without flakiness.
+- **`Support/Cloudflare` is the helper `2026-06-14-incident-triage-page.md` specifies** under
+  "Feature 0 — Real-IP resolver + Cloudflare-range guard". That item can drop its
+  `src/Support/Cloudflare.php` line and use this one; the ban-command guard it describes is a direct
+  call to `Cloudflare::contains`.
 
 ## Files Affected
 
-- `src/Middleware/SlowResponseMiddleware.php` — signature construction (`:130-135`), IP (`:266`),
-  user agent (`:269-279`)
-- `src/Jobs/SendTelegramMessageJob.php` — `ShouldQueue`; the natural place for enrichment
-- New: `src/Support/IpIdentity.php` (or similar) — PTR, ASN, classification, caching
-- `config/telegram-alerts.php` — dedup window, bot policy
-- README — document the Cloudflare real-client-IP prerequisite alongside the enrichment
+As built:
+
+- `src/Middleware/SlowResponseMiddleware.php` — signature bounding, dedup window + repeat counter,
+  bot policy, caller line
+- `src/Support/IpIdentity.php` + `IpIdentityResult.php` — PTR, ASN, classification, caching, budget
+- `src/Support/Resolver.php` + `SystemResolver.php` — the DNS seam that keeps tests off the network
+- `src/Support/Cloudflare.php` — published v4/v6 ranges + CIDR matching
+- `src/TelegramAlertsServiceProvider.php` — binds `Resolver` → `SystemResolver`, scopes `IpIdentity`
+- `config/telegram-alerts.php` — dedup window, identify-caller toggle + budget, bot policy + digest window
+- `README.md` — caller identification, the Cloudflare prerequisite, repeat suppression, bot policy
+- `peck.json` — `ptr`, `asn`, `organisation` added to the dictionary
+- `tests/` — `CloudflareTest`, `IpIdentityTest`, `SystemResolverTest`, `FakeResolver`, `DnsShim`,
+  `dns_shim.php`, plus 19 new middleware tests
+
+Not touched, contrary to the plan above: `src/Jobs/SendTelegramMessageJob.php`. The middleware does
+not route through it (see Corrections), and enrichment sits in `terminate()` instead.
 
 ## Technical Considerations
 
@@ -158,11 +223,27 @@ The package should detect an IP inside Cloudflare's published ranges and say so
 - **Test without network.** The lookups need to be stubbable, or the package's tests become
   DNS-dependent and flaky.
 
-## Open Questions
+## Open Questions — resolved
 
-- Should dedup collapse by route or by component? The same slow component on two different
-  competitions is arguably one problem, not two.
-- Is country worth including for human visitors, or does it add noise without changing any decision?
+- **Should dedup collapse by route or by component?** Left as-is: by `component::method` for Livewire,
+  by `method + URI` otherwise. That already collapses the same slow component across two different
+  competitions into one alert, which is the behaviour the question was asking for — the key never
+  included the route for Livewire requests. Changing it was unnecessary, and widening the window
+  turned out to be the whole fix.
+- **Is country worth including for human visitors?** No. It would need a geo database or a third
+  party, and it changes no decision the recipient makes at 3am — "is this a crawler or a person" does,
+  and the ASN/organisation already answers "which network". Not implemented; the organisation name is
+  the privacy ceiling.
+
+## Follow-ups (not done here — out of this item's scope)
+
+- **The user-agent line is still the longest field for human visitors** (80 chars, wrapping to two
+  lines on a phone). Dropping it for verified crawlers helped the crawler case only. Worth a separate
+  look at whether a parsed "iPhone · Safari" beats the raw string.
+- **Only Googlebot and Bingbot are classified.** Applebot, Yahoo Slurp, and the AI crawlers all have
+  documented PTR suffixes and would be two lines each in `IpIdentity::BOT_HOSTS`.
+- **Cloudflare's published ranges are a static list** and will drift. Same refresh question as
+  `2026-06-14-incident-triage-page.md` Open Question 3 — now shared between both items.
 
 ## Related
 

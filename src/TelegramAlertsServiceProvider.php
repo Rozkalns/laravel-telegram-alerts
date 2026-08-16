@@ -15,6 +15,9 @@ use Rozkalns\TelegramAlerts\Commands\NotifyDeployCommand;
 use Rozkalns\TelegramAlerts\Commands\SetupCiWebhookCommand;
 use Rozkalns\TelegramAlerts\Listeners\QueueFailureListener;
 use Rozkalns\TelegramAlerts\Middleware\SlowResponseMiddleware;
+use Rozkalns\TelegramAlerts\Support\IpIdentity;
+use Rozkalns\TelegramAlerts\Support\Resolver;
+use Rozkalns\TelegramAlerts\Support\SystemResolver;
 
 final class TelegramAlertsServiceProvider extends ServiceProvider
 {
@@ -27,6 +30,13 @@ final class TelegramAlertsServiceProvider extends ServiceProvider
             token: config()->string('telegram-alerts.bot_token'),
             chatId: config()->string('telegram-alerts.chat_id'),
             maxAttempts: config()->integer('telegram-alerts.retry_attempts', 3),
+        ));
+
+        $this->app->bind(Resolver::class, SystemResolver::class);
+
+        $this->app->scoped(IpIdentity::class, fn (): IpIdentity => new IpIdentity(
+            resolver: $this->app->make(Resolver::class),
+            budgetMs: config()->integer('telegram-alerts.identify_caller_budget_ms', 1000),
         ));
 
         config()->set('logging.channels.telegram', [

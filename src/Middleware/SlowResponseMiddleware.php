@@ -9,13 +9,17 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Rozkalns\TelegramAlerts\Support\IpIdentity;
+use Rozkalns\TelegramAlerts\Support\IpIdentityResult;
 use Rozkalns\TelegramAlerts\TelegramClient;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 final readonly class SlowResponseMiddleware
 {
     public function __construct(
         private TelegramClient $client,
+        private IpIdentity $identity,
     ) {}
 
     /**
@@ -93,12 +97,35 @@ final readonly class SlowResponseMiddleware
             ? $livewire['component'].'::'.$livewire['method']
             : $request->method().$request->getRequestUri();
         $cacheKey = 'telegram_slow_'.md5($cacheKeySuffix);
+        $repeatKey = $cacheKey.'_repeats';
+
+        $window = config()->integer('telegram-alerts.slow_response_dedup_window', 900);
 
         if (cache()->has($cacheKey)) {
+            $this->recordRepeat($cacheKey, $repeatKey);
+
             return;
         }
 
-        cache()->put($cacheKey, true, 300);
+        $identity = $this->identify($request);
+
+        if ($identity->isVerifiedBot()) {
+            $policy = config()->string('telegram-alerts.slow_response_bot_policy', 'alert');
+
+            if ($policy === 'ignore') {
+                cache()->put($cacheKey, true, $window);
+
+                return;
+            }
+
+            if ($policy === 'digest') {
+                $window = config()->integer('telegram-alerts.slow_response_bot_digest_window', 3600);
+            }
+        }
+
+        $repeats = $this->pullRepeats($repeatKey);
+
+        cache()->put($cacheKey, now()->getTimestamp(), $window);
 
         $appName = config()->string('app.name', 'Laravel');
         $appEnv = config()->string('app.env', 'production');
@@ -119,18 +146,19 @@ final readonly class SlowResponseMiddleware
             '',
         ];
 
+        if ($repeats !== null) {
+            $lines[] = $repeats;
+        }
+
         $user = $this->describeUser();
         if ($user !== null) {
             $lines[] = sprintf('👤 %s', $user);
         }
 
-        $lines[] = $this->describeClient($request);
+        $lines[] = $this->describeClient($request, $identity);
 
         if ($livewire !== null) {
-            $signature = $livewire['method'];
-            if ($livewire['params'] !== []) {
-                $signature .= '('.implode(', ', $livewire['params']).')';
-            }
+            $signature = $this->describeSignature($livewire['method'], $livewire['params']);
 
             $lines[] = sprintf('Component: <code>%s::%s</code>', e($livewire['component']), e($signature));
 
@@ -261,10 +289,19 @@ final readonly class SlowResponseMiddleware
         ];
     }
 
-    private function describeClient(Request $request): string
+    private function describeClient(Request $request, IpIdentityResult $identity): string
     {
         $ip = $request->ip();
         $line = '📡 '.e(is_string($ip) && $ip !== '' ? $ip : 'unknown');
+
+        $label = $identity->label();
+        if ($label !== null) {
+            $line .= ' · '.e($label);
+        }
+
+        if ($identity->isVerifiedBot()) {
+            return $line;
+        }
 
         $agent = $request->userAgent();
         if (is_string($agent) && $agent !== '') {
@@ -274,9 +311,95 @@ final readonly class SlowResponseMiddleware
         return $line;
     }
 
+    private function identify(Request $request): IpIdentityResult
+    {
+        $ip = $request->ip();
+        if (! is_string($ip) || $ip === '') {
+            return new IpIdentityResult('unknown');
+        }
+
+        if (! config()->boolean('telegram-alerts.identify_caller', true)) {
+            return new IpIdentityResult($ip);
+        }
+
+        try {
+            return $this->identity->identify($ip, $request->userAgent());
+        } catch (Throwable) {
+            return new IpIdentityResult($ip);
+        }
+    }
+
+    private function recordRepeat(string $cacheKey, string $repeatKey): void
+    {
+        $existing = cache()->get($repeatKey);
+
+        $count = is_array($existing) && is_int($existing['count'] ?? null) ? $existing['count'] : 0;
+        $since = is_array($existing) && is_int($existing['since'] ?? null)
+            ? $existing['since']
+            : $this->lastAlertedAt($cacheKey);
+
+        cache()->put($repeatKey, ['count' => $count + 1, 'since' => $since], $this->repeatTtl());
+    }
+
+    private function lastAlertedAt(string $cacheKey): int
+    {
+        $sentAt = cache()->get($cacheKey);
+
+        return is_int($sentAt) ? $sentAt : now()->getTimestamp();
+    }
+
+    private function repeatTtl(): int
+    {
+        $window = config()->integer('telegram-alerts.slow_response_dedup_window', 900);
+
+        if (config()->string('telegram-alerts.slow_response_bot_policy', 'alert') === 'digest') {
+            $window = max($window, config()->integer('telegram-alerts.slow_response_bot_digest_window', 3600));
+        }
+
+        return max($window * 2, 60);
+    }
+
+    private function pullRepeats(string $repeatKey): ?string
+    {
+        $existing = cache()->pull($repeatKey);
+        if (! is_array($existing) || ! is_int($existing['count'] ?? null) || $existing['count'] < 1) {
+            return null;
+        }
+
+        $line = sprintf('🔁 ×%s since the last alert', number_format($existing['count'] + 1));
+
+        $since = $existing['since'] ?? null;
+        if (is_int($since)) {
+            $minutes = (int) round((now()->getTimestamp() - $since) / 60);
+
+            if ($minutes > 0) {
+                $line = sprintf('🔁 ×%s in %s min', number_format($existing['count'] + 1), number_format($minutes));
+            }
+        }
+
+        return $line;
+    }
+
     private function truncateUserAgent(string $agent): string
     {
         return mb_strlen($agent) > 80 ? mb_substr($agent, 0, 79).'…' : $agent;
+    }
+
+    /**
+     * @param  list<string>  $params
+     */
+    private function describeSignature(string $method, array $params): string
+    {
+        if ($params === [] || $method === '__lazyLoad') {
+            return $method;
+        }
+
+        $joined = implode(', ', $params);
+        if (mb_strlen($joined) > 60) {
+            $joined = mb_substr($joined, 0, 59).'…';
+        }
+
+        return $method.'('.$joined.')';
     }
 
     /** @return list<string> */
