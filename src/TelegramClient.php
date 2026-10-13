@@ -21,10 +21,14 @@ final readonly class TelegramClient
     /**
      * @param  array<string, mixed>|null  $replyMarkup
      */
-    public function send(string $text, ?array $replyMarkup = null): void
+    public function send(string|TelegramMessage $text, ?array $replyMarkup = null): void
     {
         if (! $this->isConfigured()) {
             return;
+        }
+
+        if ($text instanceof TelegramMessage) {
+            $text = $text->render();
         }
 
         $payload = [
@@ -95,13 +99,13 @@ final readonly class TelegramClient
         }
     }
 
-    public function sendQueued(string $text): void
+    public function sendQueued(string|TelegramMessage $text): void
     {
         if (! $this->isConfigured()) {
             return;
         }
 
-        SendTelegramMessageJob::dispatch($text);
+        SendTelegramMessageJob::dispatch($text instanceof TelegramMessage ? $text->render() : $text);
     }
 
     public function isConfigured(): bool

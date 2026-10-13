@@ -13,6 +13,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **CI pipeline notifications** — webhook endpoint for GitHub Actions (or any CI) to report build results
 - **GlitchTip error tracking** — webhook receiver that turns GlitchTip issue alerts into Telegram messages with a tappable link to the issue
 - **Project identification** — `[APP_NAME]` prefix on every message, so one bot handles all your projects
+- **One message shape** — every alert shares the same header and a `📍 URL (env)` · `🏷️ release` · `🕐 time` footer, and `TelegramMessage` gives your own alerts the same shape
 - **Rate limiting** — deduplication on all alert types to avoid notification storms
 - **Auto-registration** — everything registers itself via the service provider
 
@@ -193,6 +194,7 @@ php artisan tinker --execute 'throw new Exception("glitchtip test");'
 💥 `Error`
 
 📍 https://myapp.com (production)
+🏷️ `a1b2c3d`
 🕐 2026-05-19 10:06:55 UTC
 ```
 
@@ -217,7 +219,9 @@ php artisan tinker --execute 'throw new Exception("glitchtip test");'
 
 📄 `app/Jobs/SendWelcomeEmail.php:42`
 🔄 Queue: default | Attempt: 3
+
 📍 https://myapp.com (production)
+🕐 2026-05-19 10:20:03 UTC
 ```
 
 ### Slow response alert
@@ -236,7 +240,9 @@ Route/controller request:
 🗄️ DB 1,572ms · app 2,732ms · 4 queries
 🐢 slowest: `select * from observations where student_id = ?` (1,401 ms)
 ⏱️ 4,304 ms (threshold: 2,000 ms)
+
 📍 https://myapp.com (production)
+🕐 2026-05-19 10:31:12 UTC
 ```
 
 Livewire request — there's no real route, so the component, the called method with its arguments, and any bound models are shown instead:
@@ -250,7 +256,9 @@ Component: participants.index::exportStartingLists(42)
 
 🗄️ DB 74ms · app 2,538ms · 304 queries ⚠️ N+1?
 ⏱️ 2,612 ms (threshold: 2,000 ms)
+
 📍 https://myapp.com (production)
+🕐 2026-05-19 10:33:40 UTC
 ```
 
 The slowest-query line logs the SQL template only (with `?` placeholders) — never the bound values. Bound models surface as `Model #key`; id/ulid properties as `key=value`. Arrays and other state are never dumped.
@@ -313,6 +321,7 @@ The policy applies only to crawlers proven by forward-confirmed reverse DNS — 
 💚 [MyApp] Heartbeat
 
 📊 Queue: 2 pending, 0 failed
+
 📍 https://myapp.com (production)
 🕐 2026-05-19 12:00:00 UTC
 ```
@@ -333,7 +342,7 @@ Pattern: `/home/forge/myapp/db/database.backup-*.sqlite`
 ### CI build passed
 
 ```
-✅ *[MyApp]* CI build passed
+✅ [MyApp] CI build passed
 
 `a6aa687` fix: handle null route
 Branch: `main` · Actor: `dependabot[bot]`
@@ -347,7 +356,7 @@ lint ✅ 23s · tests ✅ 1m 47s
 ### CI build failed
 
 ```
-❌ *[MyApp]* CI build failed
+❌ [MyApp] CI build failed
 
 `a6aa687` wip: broken test
 Branch: `feature/x` · Actor: `Rozkalns`
@@ -361,7 +370,7 @@ lint ✅ 19s · tests ❌ 41s
 ### GlitchTip issue
 
 ```
-🐞 *[MyApp]* GlitchTip issue
+🐞 [MyApp] GlitchTip issue
 
 PROJ-1 ZeroDivisionError: division by zero
 📄 trigger_error
@@ -371,6 +380,25 @@ PROJ-1 ZeroDivisionError: division by zero
 ```
 
 The issue title and the **Open in GlitchTip** button both link straight to the issue in GlitchTip.
+
+## Your own alerts
+
+Use `TelegramMessage` for app-specific alerts, so they carry the same header and footer as the package's own:
+
+```php
+use Rozkalns\TelegramAlerts\TelegramClient;
+use Rozkalns\TelegramAlerts\TelegramMessage;
+
+app(TelegramClient::class)->send(
+    TelegramMessage::make('📉', 'Database size dropped by 42.0%')
+        ->line('Previous: <code>1.2 MB</code>')
+        ->line('Current: <code>0.7 MB</code>'),
+);
+```
+
+The title and lines are HTML (Telegram's `parse_mode` is HTML), so pass anything that is not your own text through `e()`. `->at($time)` sets the time the footer reports, and `->withoutContext()` drops the footer for messages that are not about this deployment. `sendQueued()` accepts a message too, and renders it before queueing, so the footer shows when the alert fired.
+
+The footer's `🏷️` release comes from `telegram-alerts.release` (`TELEGRAM_ALERTS_RELEASE`), or else from `sentry.release`, which the Sentry SDK can derive from git, so most apps need no extra setting.
 
 ## Configuration
 

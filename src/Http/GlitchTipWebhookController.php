@@ -7,6 +7,7 @@ namespace Rozkalns\TelegramAlerts\Http;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Rozkalns\TelegramAlerts\TelegramClient;
+use Rozkalns\TelegramAlerts\TelegramMessage;
 
 final readonly class GlitchTipWebhookController
 {
@@ -68,17 +69,11 @@ final readonly class GlitchTipWebhookController
             $title = 'GlitchTip issue';
         }
 
-        $appName = config()->string('app.name', 'Laravel');
-
         $headline = $shortId !== ''
             ? sprintf('<code>%s</code> <a href="%s">%s</a>', e($shortId), e($titleLink), e($title))
             : sprintf('<a href="%s">%s</a>', e($titleLink), e($title));
 
-        $lines = [
-            sprintf('🐞 <b>[%s]</b> GlitchTip issue', e($appName)),
-            '',
-            $headline,
-        ];
+        $lines = [$headline];
 
         $culprit = $this->stringValue($attachment, 'text');
         if ($culprit !== '') {
@@ -90,7 +85,7 @@ final readonly class GlitchTipWebhookController
             $lines[] = $context;
         }
 
-        $this->client->send(implode("\n", $lines), [
+        $this->client->send(TelegramMessage::make('🐞', 'GlitchTip issue')->lines($lines)->withoutContext(), [
             'inline_keyboard' => [[
                 ['text' => '🔍 Open in GlitchTip', 'url' => $titleLink],
             ]],

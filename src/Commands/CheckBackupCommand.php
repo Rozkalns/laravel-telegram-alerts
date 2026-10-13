@@ -8,6 +8,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Rozkalns\TelegramAlerts\TelegramClient;
+use Rozkalns\TelegramAlerts\TelegramMessage;
 
 #[Signature('telegram:check-backup')]
 #[Description('Verify backup files exist and are recent, alert via Telegram on failure')]
@@ -95,20 +96,7 @@ final class CheckBackupCommand extends Command
 
     private function sendFailure(string $detail): void
     {
-        $appName = config()->string('app.name', 'Laravel');
-        $appEnv = config()->string('app.env', 'production');
-        $appUrl = config()->string('app.url');
-
-        $lines = [
-            sprintf('🔴 <b>[%s]</b> Backup check failed', e($appName)),
-            '',
-            $detail,
-            '',
-            sprintf('📍 %s (%s)', e($appUrl), e($appEnv)),
-            sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
-        ];
-
-        $this->client->sendQueued(implode("\n", $lines));
+        $this->client->sendQueued(TelegramMessage::make('🔴', 'Backup check failed')->line($detail));
         $this->error('Backup check failed — Telegram alert sent.');
     }
 

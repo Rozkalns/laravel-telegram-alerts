@@ -40,8 +40,8 @@ return [
     // Dedup window applied to verified crawlers under the 'digest' policy.
     'slow_response_bot_digest_window' => (int) env('TELEGRAM_SLOW_RESPONSE_BOT_DIGEST_WINDOW', 3600),
 
-    // Deployed release identifier (e.g. short git SHA) shown in slow-response
-    // alerts so each alert can be tied to a specific deploy. Null unless set.
+    // Deployed release identifier (e.g. short git SHA) shown in every alert's footer
+    // so it can be tied to a specific deploy. Falls back to sentry.release when unset.
     'release' => env('TELEGRAM_ALERTS_RELEASE'),
 
     'slow_query_threshold' => (int) env('TELEGRAM_SLOW_QUERY_THRESHOLD', 100),
