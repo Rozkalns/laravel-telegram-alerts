@@ -9,6 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Rozkalns\TelegramAlerts\TelegramClient;
+use Rozkalns\TelegramAlerts\TelegramMessage;
 
 #[Signature('telegram:heartbeat')]
 #[Description('Send a Telegram alert when there are pending or failed queue jobs')]
@@ -30,10 +31,6 @@ final class HeartbeatCommand extends Command
             return self::SUCCESS;
         }
 
-        $appName = config()->string('app.name', 'Laravel');
-        $appEnv = config()->string('app.env', 'production');
-        $appUrl = config()->string('app.url');
-
         $pendingJobs = $this->pendingJobCount();
         $failedJobs = $this->failedJobCount();
 
@@ -41,15 +38,9 @@ final class HeartbeatCommand extends Command
             return self::SUCCESS;
         }
 
-        $lines = [
-            sprintf('💚 <b>[%s]</b> Heartbeat', e($appName)),
-            '',
-            sprintf('📊 Queue: %d pending, %d failed', $pendingJobs, $failedJobs),
-            sprintf('📍 %s (%s)', e($appUrl), e($appEnv)),
-            sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
-        ];
-
-        $this->client->sendQueued(implode("\n", $lines));
+        $this->client->sendQueued(
+            TelegramMessage::make('💚', 'Heartbeat')->line(sprintf('📊 Queue: %d pending, %d failed', $pendingJobs, $failedJobs)),
+        );
 
         return self::SUCCESS;
     }

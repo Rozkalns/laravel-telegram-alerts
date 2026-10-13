@@ -7,6 +7,7 @@ namespace Rozkalns\TelegramAlerts\Http;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Rozkalns\TelegramAlerts\TelegramClient;
+use Rozkalns\TelegramAlerts\TelegramMessage;
 
 final readonly class CiWebhookController
 {
@@ -33,7 +34,6 @@ final readonly class CiWebhookController
 
         $emoji = $status === 'success' ? '✅' : '❌';
         $label = $status === 'success' ? 'passed' : 'failed';
-        $appName = config()->string('app.name', 'Laravel');
         $shortSha = $sha !== '' ? substr($sha, 0, 7) : '';
 
         $commitLine = match (true) {
@@ -44,8 +44,6 @@ final readonly class CiWebhookController
         };
 
         $lines = [
-            sprintf('%s <b>[%s]</b> CI build %s', $emoji, e($appName), $label),
-            '',
             $commitLine,
             sprintf('Branch: <code>%s</code> · Actor: <code>%s</code>', $branch !== '' ? e($branch) : 'unknown', $actor !== '' ? e($actor) : 'unknown'),
         ];
@@ -70,7 +68,7 @@ final readonly class CiWebhookController
             $lines[] = sprintf('🔗 %s', e($runUrl));
         }
 
-        $this->client->send(implode("\n", $lines));
+        $this->client->send(TelegramMessage::make($emoji, 'CI build '.$label)->lines($lines)->withoutContext());
 
         return response()->json(['ok' => true]);
     }

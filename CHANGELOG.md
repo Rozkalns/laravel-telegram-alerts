@@ -2,6 +2,22 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.10.0
+
+### Added
+
+- **`TelegramMessage`, one shape for every alert.** It renders the `<emoji> [APP_NAME] <title>` header, the body, and a shared footer: `📍 URL (env)`, `🏷️ release` when one is known, and `🕐 time`. All package alerts now use it, and `TelegramClient::send()` / `sendQueued()` accept it, so apps build their own alerts the same way instead of copying the header. Hand-built headers are how app alerts ended up with no project name, or in Markdown while the client sends HTML.
+
+### Changed
+
+- **Every alert's footer now carries the release.** `telegram-alerts.release` falls back to `sentry.release`, which the Sentry SDK derives from git, so most apps get it with no new setting. Before, only slow-response alerts showed a release, and only when `TELEGRAM_ALERTS_RELEASE` was set.
+- **Queue-failure and slow-response alerts gain the `🕐` time line**, and a blank line now separates every body from its footer.
+- CI build and GlitchTip alerts keep no footer: a CI build is of a branch, not of this deployment, and a GlitchTip issue carries its own environment and release.
+
+### Upgrade notes
+
+No breaking changes and no new config. `send()` and `sendQueued()` still accept a plain string. Note that `^0.9.0` does not allow 0.10 — bump the constraint to `^0.10.0`.
+
 ## v0.9.0
 
 ### Added

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Rozkalns\TelegramAlerts\Support\IpIdentity;
 use Rozkalns\TelegramAlerts\Support\IpIdentityResult;
 use Rozkalns\TelegramAlerts\TelegramClient;
+use Rozkalns\TelegramAlerts\TelegramMessage;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -129,16 +130,9 @@ final readonly class SlowResponseMiddleware
 
         $repeats = $this->pullRepeats($repeatKey);
 
-        $appName = config()->string('app.name', 'Laravel');
-        $appEnv = config()->string('app.env', 'production');
-        $appUrl = config()->string('app.url');
-
         $seconds = number_format($elapsedMs / 1000, 1);
 
-        $lines = [
-            sprintf('🐌 <b>[%s]</b> Slow response (%ss)', e($appName), $seconds),
-            '',
-        ];
+        $lines = [];
 
         if ($repeats !== null) {
             $lines[] = $repeats;
@@ -186,14 +180,8 @@ final readonly class SlowResponseMiddleware
         $lines = [...$lines, ...$this->describeDatabase($request, $elapsedMs)];
 
         $lines[] = sprintf('⏱️ %s ms (threshold: %s ms)', number_format($elapsedMs), number_format($thresholdMs));
-        $lines[] = sprintf('📍 %s (%s)', e($appUrl), e($appEnv));
 
-        $release = config('telegram-alerts.release');
-        if (is_string($release) && $release !== '') {
-            $lines[] = sprintf('🏷️ <code>%s</code>', e($release));
-        }
-
-        $this->client->send(implode("\n", $lines));
+        $this->client->send(TelegramMessage::make('🐌', sprintf('Slow response (%ss)', $seconds))->lines($lines));
     }
 
     private function describeUser(): ?string

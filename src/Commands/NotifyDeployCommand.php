@@ -9,6 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 use Rozkalns\TelegramAlerts\TelegramClient;
+use Rozkalns\TelegramAlerts\TelegramMessage;
 
 #[Signature('telegram:notify-deploy')]
 #[Description('Send a Telegram notification after a successful deploy')]
@@ -28,9 +29,6 @@ final class NotifyDeployCommand extends Command
             return self::SUCCESS;
         }
 
-        $appName = config()->string('app.name', 'Laravel');
-        $appEnv = config()->string('app.env', 'production');
-        $appUrl = config()->string('app.url');
         $shortSha = trim(Process::run('git log -1 --format="%h"')->output());
         $commitMsg = trim(Process::run('git log -1 --format="%s"')->output());
 
@@ -40,16 +38,7 @@ final class NotifyDeployCommand extends Command
             default => 'unknown',
         };
 
-        $text = implode("\n", [
-            sprintf('✅ <b>[%s]</b> deployed', e($appName)),
-            '',
-            $commitLine,
-            '',
-            sprintf('📍 %s (%s)', e($appUrl), e($appEnv)),
-            sprintf('🕐 %s', now()->format('Y-m-d H:i:s T')),
-        ]);
-
-        $this->client->sendQueued($text);
+        $this->client->sendQueued(TelegramMessage::make('✅', 'deployed')->line($commitLine));
 
         $this->info('Deploy notification sent.');
 
