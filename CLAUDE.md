@@ -42,13 +42,32 @@ All of these must pass — they are enforced by `composer test`:
 
 ## Architecture
 
-The package has two features, both auto-registered by the service provider:
+Everything is auto-registered by `TelegramAlertsServiceProvider`. The package is a messaging API: it sends alerts and owns their format. Domain checks (for example "the database backup has not changed") belong in the apps. `telegram:check-backup` predates that rule and is a candidate to move out.
 
-1. **Error logging** — `TelegramHandler` (Monolog `AbstractProcessingHandler`) is registered as a `telegram` log channel in `logging.channels`. When included in `LOG_STACK`, it sends formatted error messages to Telegram via the Bot API. Messages are rate-limited (1 per unique message per 60s via cache) and truncated at 3000 chars. Failed sends are silently swallowed with `rescue()`.
+### Sending
 
-2. **Deploy command** — `NotifyDeployCommand` (`telegram:notify-deploy`) sends a deploy notification including the latest git commit. It's a fire-and-forget artisan command for deploy scripts.
+- **`TelegramClient`** (scoped singleton) posts to the Bot API with `parse_mode` HTML. `send()` retries on 429 (honours `Retry-After`, capped at 5 s), 5xx and network errors up to `retry_attempts`, logs a warning when it gives up, and never throws. `sendQueued()` renders the message on the caller side and dispatches `SendTelegramMessageJob`, so the time in the footer is when the alert fired.
+- **`TelegramMessage`** is the one message format. `TelegramMessage::make($emoji, $title)->line(...)` renders a `<emoji> <b>[APP_NAME]</b> title` header, the body, and a footer with `📍 URL (env)`, `🏷️ release` (`telegram-alerts.release`, falling back to `sentry.release`) and `🕐 time`. `withoutContext()` drops the footer (CI and GlitchTip alerts carry their own). Escape dynamic values with `e()`. A plain string passed to `send()` is sent unchanged; see `docs/backlog/` for the plan to wrap it by default.
+- If `bot_token` or `chat_id` is empty, nothing is sent.
 
-Both features read `bot_token` and `chat_id` from `config/telegram-alerts.php` (backed by env vars `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`). If either is empty, they silently no-op.
+### Alert sources
+
+| Source | Class | Turned on by |
+|---|---|---|
+| Errors from the log | `TelegramHandler` via the `telegram` log channel (`TelegramLogChannel`). One alert per unique message per 60 s, truncated at 3000 characters. | adding `telegram` to `LOG_STACK` |
+| Deploys | `telegram:notify-deploy` (`NotifyDeployCommand`), names the latest commit | the deploy script |
+| Failed queue jobs | `QueueFailureListener` on `Queue::failing` | `queue_failures` (on by default) |
+| Slow responses | `SlowResponseMiddleware`, pushed onto the HTTP kernel. Names the caller (PTR + ASN through `Support/IpIdentity`), deduplicates per route, and applies a policy to verified crawlers. | `slow_response_threshold` > 0 |
+| Scheduler heartbeat | `telegram:heartbeat`, scheduled hourly | `scheduler_heartbeat` |
+| Backup check | `telegram:check-backup`, scheduled daily at 06:00 | `backup_path` set |
+| CI builds | `POST /api/telegram-alerts/ci` (`CiWebhookController`, bearer token checked by `CiWebhookMiddleware`); `telegram:ci-webhook-setup` creates the secret, stores it in GitHub and `.env` | `ci_webhook` + `ci_webhook_secret` |
+| GlitchTip issues | `POST /api/telegram-alerts/glitchtip` (`GlitchTipWebhookController` + `GlitchTipWebhookMiddleware`) | `glitchtip_webhook` + `glitchtip_webhook_secret` |
+
+All options live in `config/telegram-alerts.php`, mostly backed by `TELEGRAM_*` env vars.
+
+### Releases
+
+Versions are 0.x, so a minor release (0.10 → 0.11) is not allowed by an app's `^0.10.0` constraint: bump each app by hand. Every tag gets a GitHub release with its CHANGELOG entry. `composer.lock` is not committed, so CI installs the newest Rector and can fail where a stale local install passes; run `composer update` before tagging.
 
 ## Code Style
 
