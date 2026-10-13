@@ -50,9 +50,7 @@ final readonly class IpIdentity
         $bot = $this->stringOrNull($facts['bot'] ?? null);
         $verified = ($facts['verified'] ?? false) === true;
 
-        if ($bot === null) {
-            $bot = $this->botFromUserAgent($userAgent);
-        }
+        $bot ??= $this->botFromUserAgent($userAgent);
 
         return new IpIdentityResult(
             ip: $ip,
