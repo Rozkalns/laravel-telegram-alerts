@@ -182,7 +182,10 @@ final class SetupCiWebhookCommand extends Command
                       jobs=\$(gh api "repos/\$REPO/actions/runs/\$RUN_ID/jobs" --paginate \\
                         --jq '.jobs[] | select(.started_at != null and .completed_at != null) | {name, conclusion, duration: ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))}' \\
                         | jq -sc '.') || jobs='[]'
-                      jq -n --argjson jobs "\$jobs" '{
+                      # Anything but a 2xx fails the job, so a lost alert is never silent: a moved
+                      # APP_URL answers with a redirect, and curl -s exits 0 on any HTTP reply.
+                      # (--fail would not catch a redirect: it only fails on 4xx and 5xx.)
+                      status=\$(jq -n --argjson jobs "\$jobs" '{
                         status: (if env.STATUS == "success" then "success" else "failure" end),
                         branch: env.BRANCH,
                         sha: env.SHA,
@@ -191,10 +194,15 @@ final class SetupCiWebhookCommand extends Command
                         run_url: env.RUN_URL,
                         duration: ((env.RUN_UPDATED | fromdateiso8601) - (env.RUN_STARTED | fromdateiso8601)),
                         jobs: \$jobs
-                      }' | curl -s -X POST "\$APP_URL/api/telegram-alerts/ci" \\
+                      }' | curl -sS -o response.txt -w '%{http_code}' -X POST "\$APP_URL/api/telegram-alerts/ci" \\
                         -H "Authorization: Bearer \$WEBHOOK_SECRET" \\
                         -H "Content-Type: application/json" \\
-                        --data-binary @-
+                        --data-binary @-)
+                      cat response.txt
+                      if [[ \$status != 2* ]]; then
+                        echo "::error::Telegram alert not delivered: HTTP \$status from \$APP_URL"
+                        exit 1
+                      fi
             YAML;
     }
 
