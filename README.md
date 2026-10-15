@@ -103,7 +103,7 @@ TELEGRAM_BACKUP_PATH=/path/to/backups/database.backup-*.sqlite
 
 ### 6. CI Pipeline Notifications (optional)
 
-Get Telegram alerts when your GitHub Actions CI workflow passes or fails — on any branch or PR, including Dependabot and fork PRs.
+Get Telegram alerts when your GitHub Actions CI workflow fails or times out — on any branch or PR, including Dependabot and fork PRs. Green and cancelled runs stay quiet; a successful deploy is already announced by `telegram:notify-deploy`.
 
 **One-command setup:**
 

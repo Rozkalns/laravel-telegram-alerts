@@ -282,6 +282,7 @@ it('generates telegram-ci.yml from the detected workflow name', function (): voi
         ->and($content)->toContain('actions: read')
         ->and($content)->toContain('GH_TOKEN: ${{ github.token }}')
         ->and($content)->toContain('github.event.workflow_run.conclusion')
+        ->and($content)->toContain("if: >-\n      github.event.workflow_run.conclusion == 'failure'\n      || github.event.workflow_run.conclusion == 'timed_out'\n    steps:")
         ->and($content)->toContain('COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}')
         ->and($content)->toContain('gh api "repos/$REPO/actions/runs/$RUN_ID/jobs"')
         ->and($content)->toContain('--argjson jobs')

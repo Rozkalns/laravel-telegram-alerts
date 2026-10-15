@@ -8,6 +8,10 @@ All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in 
 
 - **The generated `telegram-ci.yml` now fails when the alert is not delivered.** The step piped its payload to `curl -s`, which exits 0 on any HTTP reply, so a redirect from a moved `APP_URL`, a rotated secret or a 500 left the job green and the alert lost without a trace. It now requires a 2xx reply and fails with an `::error::` annotation naming the status. `--fail` alone would not catch the redirect case: it only fails on 4xx and 5xx.
 
+### Changed
+
+- **The generated `telegram-ci.yml` alerts only on a failed or timed-out run.** A green run is not news: a successful deploy is already announced by `telegram:notify-deploy`. A cancelled run is usually one a newer push replaced. Before, every completed CI run posted, which is also a billed Actions minute each. To keep alerts for green runs, delete the job's `if:` condition.
+
 ### Upgrade notes
 
 Re-run `telegram:ci-webhook-setup`, or make the same change by hand to an existing `.github/workflows/telegram-ci.yml`.
