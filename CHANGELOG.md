@@ -2,6 +2,16 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- **The generated `telegram-ci.yml` now fails when the alert is not delivered.** The step piped its payload to `curl -s`, which exits 0 on any HTTP reply, so a redirect from a moved `APP_URL`, a rotated secret or a 500 left the job green and the alert lost without a trace. It now requires a 2xx reply and fails with an `::error::` annotation naming the status. `--fail` alone would not catch the redirect case: it only fails on 4xx and 5xx.
+
+### Upgrade notes
+
+Re-run `telegram:ci-webhook-setup`, or make the same change by hand to an existing `.github/workflows/telegram-ci.yml`.
+
 ## v0.10.0
 
 ### Added
