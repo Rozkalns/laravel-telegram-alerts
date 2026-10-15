@@ -162,6 +162,10 @@ final class SetupCiWebhookCommand extends Command
             jobs:
               notify:
                 runs-on: ubuntu-latest
+                # A green run is not news, and a cancelled one is usually a superseded run.
+                if: >-
+                  github.event.workflow_run.conclusion == 'failure'
+                  || github.event.workflow_run.conclusion == 'timed_out'
                 steps:
                   - name: Notify Telegram
                     env:
