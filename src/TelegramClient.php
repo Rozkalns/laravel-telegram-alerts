@@ -7,6 +7,7 @@ namespace Rozkalns\TelegramAlerts;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
+use Psr\Log\LoggerInterface;
 use Rozkalns\TelegramAlerts\Jobs\SendTelegramMessageJob;
 use Throwable;
 
@@ -115,7 +116,7 @@ final readonly class TelegramClient
 
     private function logInfo(string $message, string $text): void
     {
-        Log::channel('single')->info($message, [
+        $this->logger()->info($message, [
             'text' => mb_substr($text, 0, 200),
         ]);
     }
@@ -128,6 +129,31 @@ final readonly class TelegramClient
             'exception' => $exception,
         ]);
 
-        Log::channel('single')->warning($message, $context);
+        $this->logger()->warning($message, $context);
+    }
+
+    private function logger(): LoggerInterface
+    {
+        $configured = config('telegram-alerts.log_channel');
+        $channels = is_string($configured) && $configured !== '' ? [$configured] : $this->defaultChannels();
+        $channels = array_values(array_diff($channels, ['telegram']));
+
+        return match (count($channels)) {
+            0 => Log::channel('single'),
+            1 => Log::channel($channels[0]),
+            default => Log::stack($channels),
+        };
+    }
+
+    /** @return list<string> */
+    private function defaultChannels(): array
+    {
+        $default = config()->string('logging.default', 'stack');
+
+        if (config("logging.channels.{$default}.driver") !== 'stack') {
+            return [$default];
+        }
+
+        return array_values(array_filter((array) config("logging.channels.{$default}.channels", []), is_string(...)));
     }
 }
