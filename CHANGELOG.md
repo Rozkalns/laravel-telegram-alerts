@@ -2,7 +2,7 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
-## Unreleased
+## v0.10.2
 
 ### Fixed
 
