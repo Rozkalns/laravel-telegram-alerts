@@ -415,6 +415,8 @@ return [
     'bot_token' => env('TELEGRAM_BOT_TOKEN', ''),
     'chat_id' => env('TELEGRAM_CHAT_ID', ''),
     'log_level' => env('TELEGRAM_LOG_LEVEL', 'error'),
+    // Where the package logs "Telegram alert sent" / "delivery failed" (empty = the app's channels)
+    'log_channel' => env('TELEGRAM_ALERTS_LOG_CHANNEL'),
 
     // Queue failure alerts (enabled by default)
     'queue_failures' => true,
@@ -474,6 +476,7 @@ All Telegram sends go through a shared `TelegramClient`:
 - Uses Laravel's `Http` facade with a 5-second timeout
 - Failed API calls are silently swallowed (via `rescue()`) so they never break your app
 - If `bot_token` or `chat_id` is empty, all features silently no-op
+- Each send is logged ("Telegram alert sent", or "delivery failed" as a warning) to `log_channel` if set, else to the app's default log channels (`LOG_STACK`) with `telegram` removed, so a failed send never alerts about itself. If no channel is left, it uses `single`
 
 Rate limiting uses the cache to deduplicate:
 - Error logs: 1 per unique message per 60 seconds

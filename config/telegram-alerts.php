@@ -10,6 +10,10 @@ return [
 
     'log_level' => env('TELEGRAM_LOG_LEVEL', 'error'),
 
+    // Where "Telegram alert sent" / "delivery failed" lines go. Empty: the app's default log
+    // channels without `telegram` (falls back to `single`).
+    'log_channel' => env('TELEGRAM_ALERTS_LOG_CHANNEL'),
+
     'queue_failures' => true,
 
     'slow_response_threshold' => (int) env('TELEGRAM_SLOW_RESPONSE_THRESHOLD', 0),

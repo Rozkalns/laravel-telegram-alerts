@@ -6,12 +6,13 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
+use Psr\Log\LoggerInterface;
 use Rozkalns\TelegramAlerts\Jobs\SendTelegramMessageJob;
 use Rozkalns\TelegramAlerts\TelegramClient;
 
 it('sends a message to the telegram api', function (): void {
     Http::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once()->with('Telegram alert sent', ['text' => 'Hello world']);
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
 
@@ -27,7 +28,7 @@ it('sends a message to the telegram api', function (): void {
 
 it('includes reply markup in the payload when provided', function (): void {
     Http::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
 
@@ -41,7 +42,7 @@ it('includes reply markup in the payload when provided', function (): void {
 
 it('omits reply markup from the payload by default', function (): void {
     Http::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
 
@@ -71,7 +72,7 @@ it('is a no-op when chat id is empty', function (): void {
 
 it('retries on 429 and respects retry-after header', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake([
@@ -90,7 +91,7 @@ it('retries on 429 and respects retry-after header', function (): void {
 
 it('retries on 5xx with exponential backoff', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake([
@@ -110,7 +111,7 @@ it('retries on 5xx with exponential backoff', function (): void {
 
 it('does not retry on 4xx client error', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('warning')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake([
@@ -126,7 +127,7 @@ it('does not retry on 4xx client error', function (): void {
 
 it('does not retry on 401 unauthorized', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('warning')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake([
@@ -142,7 +143,7 @@ it('does not retry on 401 unauthorized', function (): void {
 
 it('retries on network exception', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     $callCount = 0;
@@ -165,7 +166,7 @@ it('retries on network exception', function (): void {
 
 it('logs warning when all retries exhausted on 5xx', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('warning')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake([
@@ -183,7 +184,7 @@ it('logs warning when all retries exhausted on 5xx', function (): void {
 
 it('logs warning when all retries exhausted on network exception', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('warning')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake(fn () => throw new RuntimeException('Connection failed'));
@@ -194,7 +195,7 @@ it('logs warning when all retries exhausted on network exception', function (): 
 
 it('logs warning when 429 exhausts retries', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('warning')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake([
@@ -212,7 +213,7 @@ it('logs warning when 429 exhausts retries', function (): void {
 
 it('caps retry-after at 5 seconds', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once();
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
     Http::fake([
@@ -230,7 +231,7 @@ it('caps retry-after at 5 seconds', function (): void {
 it('truncates logged text to 200 characters', function (): void {
     Http::fake();
     $longText = str_repeat('A', 300);
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('info')->once()->with('Telegram alert sent', ['text' => str_repeat('A', 200)]);
     Log::shouldReceive('channel')->with('single')->andReturn($logger);
 
@@ -240,7 +241,7 @@ it('truncates logged text to 200 characters', function (): void {
 
 it('logs warning with text preview on failure', function (): void {
     Sleep::fake();
-    $logger = Mockery::mock();
+    $logger = Mockery::mock(LoggerInterface::class);
     $logger->shouldReceive('warning')->once()->withArgs(fn (string $message, array $context): bool => $message === 'Telegram alert delivery failed'
         && $context['text'] === 'Hello'
         && $context['status'] === 400);
@@ -291,3 +292,20 @@ it('reports not configured when chat id is empty', function (): void {
 
     expect($client->isConfigured())->toBeFalse();
 });
+
+it('logs its own lines to the app log channels, never to telegram', function (array $config, string $method, string|array $target): void {
+    Http::fake();
+    config($config);
+    $logger = Mockery::mock(LoggerInterface::class);
+    $logger->shouldReceive('info')->once()->with('Telegram alert sent', ['text' => 'Hello']);
+    Log::shouldReceive($method)->once()->with($target)->andReturn($logger);
+
+    new TelegramClient(token: 'bot-token', chatId: '12345')->send('Hello');
+})->with([
+    'stack without telegram' => [['logging.channels.stack.channels' => ['daily', 'telegram']], 'channel', 'daily'],
+    'several channels' => [['logging.channels.stack.channels' => ['daily', 'stderr', 'telegram']], 'stack', ['daily', 'stderr']],
+    'a default channel that is not a stack' => [['logging.default' => 'daily'], 'channel', 'daily'],
+    'only telegram left' => [['logging.channels.stack.channels' => ['telegram']], 'channel', 'single'],
+    'log_channel set' => [['telegram-alerts.log_channel' => 'stderr', 'logging.channels.stack.channels' => ['daily']], 'channel', 'stderr'],
+    'log_channel set to telegram' => [['telegram-alerts.log_channel' => 'telegram'], 'channel', 'single'],
+]);

@@ -2,6 +2,12 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- **The package's own log lines follow the app's log channels.** "Telegram alert sent" and "Telegram alert delivery failed" were written with `Log::channel('single')`, so an app on `LOG_STACK=daily,telegram` still grew `storage/logs/laravel.log` next to its daily files. They now go to the app's default channels with `telegram` removed, so a failed send still never alerts about itself. A new `log_channel` option (`TELEGRAM_ALERTS_LOG_CHANNEL`) picks a channel explicitly. Apps on `LOG_STACK=single,telegram` see no change.
+
 ## v0.10.1
 
 ### Fixed
