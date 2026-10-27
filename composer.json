@@ -40,7 +40,8 @@
             "Tests\\": "tests/"
         },
         "files": [
-            "tests/dns_shim.php"
+            "tests/dns_shim.php",
+            "tests/host_shim.php"
         ]
     },
     "extra": {
@@ -62,7 +63,7 @@
     "scripts": {
         "lint": "pint",
         "refactor": "rector",
-        "test:type-coverage": "pest --type-coverage --exactly=100",
+        "test:type-coverage": "pest --type-coverage --exactly=100 --memory-limit=512M",
         "test:typos": "peck",
         "test:lint": "pint --test",
         "test:unit": "XDEBUG_MODE=coverage pest --coverage --exactly=100",

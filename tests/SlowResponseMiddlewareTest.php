@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 use Rozkalns\TelegramAlerts\Middleware\SlowResponseMiddleware;
+use Rozkalns\TelegramAlerts\Support\Host;
 use Rozkalns\TelegramAlerts\TelegramClient;
+use Tests\FakeHost;
 
 function livewirePayload(string $component = 'competition-results', ?string $method = 'loadRankings', array $data = [], array $params = []): array
 {
@@ -1153,4 +1155,93 @@ it('enriches once when several slow requests race on the same component', functi
     $ptrLookups = array_filter($resolver->queries, fn (string $q): bool => str_ends_with($q, '.in-addr.arpa'));
 
     expect($ptrLookups)->toHaveCount(1);
+});
+
+function fakeHost(): FakeHost
+{
+    /** @var FakeHost $host */
+    $host = app(Host::class);
+
+    return $host;
+}
+
+function getSlow(string $path): TestResponse
+{
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+
+    Route::middleware(SlowResponseMiddleware::class)->get($path, function (): string {
+        passSlowThreshold();
+
+        return 'ok';
+    });
+
+    return test()->get($path);
+}
+
+it('shows server load, memory, request cpu time and php peak memory', function (): void {
+    getSlow('/test-host')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '🖥️ load 1.50 · 0.75 · 0.50 (4 cores) · RAM 75% (6.0 / 8.0 GB) · steal 12%')
+        && str_contains((string) $r['text'], '⚙️ CPU 1,850ms · PHP peak 34 MB'));
+});
+
+it('says core for a single cpu', function (): void {
+    fakeHost()->cores = 1;
+
+    getSlow('/test-host-one-core')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '(1 core)'));
+});
+
+it('omits the core count when it is unknown', function (): void {
+    fakeHost()->cores = null;
+
+    getSlow('/test-host-no-cores')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '🖥️ load 1.50 · 0.75 · 0.50 · RAM'));
+});
+
+it('omits the server line when load, memory and steal are unknown', function (): void {
+    fakeHost()->load = null;
+    fakeHost()->memory = null;
+    fakeHost()->ticks = [null, null];
+
+    getSlow('/test-host-no-server')->assertOk();
+
+    Http::assertSent(fn ($r): bool => ! str_contains((string) $r['text'], '🖥️')
+        && str_contains((string) $r['text'], '⚙️ CPU'));
+});
+
+it('omits memory when the total is zero', function (): void {
+    fakeHost()->memory = ['total' => 0, 'available' => 0];
+
+    getSlow('/test-host-zero-memory')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '(4 cores)')
+        && ! str_contains((string) $r['text'], 'RAM'));
+});
+
+it('omits request cpu time when it cannot be read', function (): void {
+    fakeHost()->cpuTimes = [null, null];
+
+    getSlow('/test-host-no-cpu')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], '⚙️ PHP peak 34 MB'));
+});
+
+it('omits steal time when cpu ticks cannot be read', function (): void {
+    fakeHost()->ticks = [null, null];
+
+    getSlow('/test-host-no-ticks')->assertOk();
+
+    Http::assertSent(fn ($r): bool => str_contains((string) $r['text'], 'RAM 75% (6.0 / 8.0 GB)')
+        && ! str_contains((string) $r['text'], 'steal'));
+});
+
+it('omits steal time when no cpu ticks passed', function (): void {
+    fakeHost()->ticks = [['total' => 1_000, 'steal' => 10], ['total' => 1_000, 'steal' => 10]];
+
+    getSlow('/test-host-same-ticks')->assertOk();
+
+    Http::assertSent(fn ($r): bool => ! str_contains((string) $r['text'], 'steal'));
 });

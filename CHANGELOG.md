@@ -2,6 +2,21 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.11.0
+
+### Added
+
+- **Slow-response alerts show whether the page or the server was slow.** Two new lines follow the DB line:
+  `🖥️ load 6.42 · 3.10 · 1.85 (2 cores) · RAM 91% (3.6 / 3.9 GB) · steal 0%` and `⚙️ CPU 240ms · PHP peak 38 MB`. `CPU` is the CPU time the worker used during the request, so CPU far below app time means the request was waiting: for a busy server when load, RAM or steal is high, or for I/O when they are not. `steal` is the share of CPU the hypervisor gave to other guests during the request. Load, core count, RAM and steal are read from `/proc` and are left out where they cannot be read, so on macOS only load is shown.
+
+### Changed
+
+- `composer test:type-coverage` runs with `--memory-limit=512M`. With a cold cache it ran out of PHP's default 128 MB.
+
+### Upgrade notes
+
+No new config. `^0.10.0` does not allow 0.11, so bump the constraint to `^0.11.0`.
+
 ## v0.10.2
 
 ### Fixed

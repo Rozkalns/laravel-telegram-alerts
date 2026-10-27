@@ -35,7 +35,7 @@ footer adds `🏷️ 082bc1f53a0c` (12 characters, from `sentry.release`, which 
   `TelegramMessage::withoutRelease()` (or a context option) and use it in `NotifyDeployCommand`.
 - Tests: string wrapping (one line, several lines, empty string), facade calls, `sendRaw()` sends unchanged, the
   queued path renders exactly once, and the deploy notice has no `🏷️` line. Keep 100% line and type coverage.
-- README ("Your own alerts" section, deploy example) and CHANGELOG entry for **v0.11.0**, then a tag and a GitHub
+- README ("Your own alerts" section, deploy example) and CHANGELOG entry for **v0.12.0** (v0.11.0 went to slow-response host stats on 2026-10-27), then a tag and a GitHub
   release (releases are back-filled to v0.10.0, so keep them in step).
 
 ### Out of scope (for now)
@@ -72,10 +72,10 @@ footer adds `🏷️ 082bc1f53a0c` (12 characters, from `sentry.release`, which 
 - [ ] `NotifyDeployCommand` uses it. Test that the deploy text contains the commit once and no `🏷️`.
 
 ### Phase 4 — Release and roll-out
-- [ ] README + CHANGELOG (v0.11.0, upgrade note: string sends now look different; `sendRaw()` keeps the old
+- [ ] README + CHANGELOG (v0.12.0, upgrade note: string sends now look different; `sendRaw()` keeps the old
       behaviour).
-- [ ] Tag v0.11.0 and publish the GitHub release.
-- [ ] Apps: bump `^0.10.0` → `^0.11.0`. If these are still open, change them in place instead of opening new PRs:
+- [ ] Tag v0.12.0 and publish the GitHub release.
+- [ ] Apps: bump to `^0.12.0`. If these are still open, change them in place instead of opening new PRs:
       kartites #469, lvva-masters #172, varna #130, rozkalns.xyz #101. Merge them **one at a time** (overlapping
       in-place deploys corrupt `vendor/` on rozkalns.xyz).
 - [ ] Optional in kartites / lvva-masters: replace `TelegramClient` injection with the facade where it reads better.
@@ -97,9 +97,9 @@ footer adds `🏷️ 082bc1f53a0c` (12 characters, from `sentry.release`, which 
 - **Double wrapping is the main risk.** Every path must render exactly once. `sendQueued()` renders on the caller
   side (so the `🕐` footer shows when the alert fired, not when the worker ran), and the job must then send that
   text raw. Add a test that fails if the header appears twice.
-- **Behaviour change for string callers, so 0.11.0, not 0.10.1.** On 2026-10-13 nothing in the package or the four
+- **Behaviour change for string callers, so a minor bump (0.12.0), not a patch.** On 2026-10-13 nothing in the package or the four
   apps sends a plain string (all pass `TelegramMessage`), so nothing visible changes today. Other consumers would
-  see the new header. On 0.x, `^0.10.0` does not allow 0.11, so every app needs a constraint bump (Dependabot never
+  see the new header. On 0.x, `^0.11.0` does not allow 0.12, so every app needs a constraint bump (Dependabot never
   offers one).
 - **The title is HTML.** A first line from user input must already be escaped by the caller, same as today's
   `send()`. Document this; don't escape automatically, or existing `<code>` / `<b>` in strings would break.

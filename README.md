@@ -7,7 +7,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **Error alerts** — ERROR+ log entries sent to Telegram with exception class, file, and line number
 - **Deploy notifications** — artisan command to announce successful deploys
 - **Queue failure alerts** — instant notification when a queued job fails
-- **Slow response detection** — alerts when requests exceed a configurable duration threshold, enriched with the user, a DB-vs-app time split, the slowest query, Livewire component/model context, and an identified caller (reverse DNS + ASN, with verified crawler detection)
+- **Slow response detection** — alerts when requests exceed a configurable duration threshold, enriched with the user, a DB-vs-app time split, the slowest query, Livewire component/model context, and an identified caller (reverse DNS + ASN, with verified crawler detection), and server load, RAM, CPU steal and request CPU time
 - **Scheduler heartbeat** — periodic ping to confirm your scheduler is alive
 - **Backup verification** — daily check that backup files exist and are recent
 - **CI pipeline notifications** — webhook endpoint for GitHub Actions (or any CI) to report build results
@@ -239,6 +239,8 @@ Route/controller request:
 
 🗄️ DB 1,572ms · app 2,732ms · 4 queries
 🐢 slowest: `select * from observations where student_id = ?` (1,401 ms)
+🖥️ load 0.42 · 0.38 · 0.35 (2 cores) · RAM 48% (1.9 / 3.9 GB) · steal 0%
+⚙️ CPU 310ms · PHP peak 38 MB
 ⏱️ 4,304 ms (threshold: 2,000 ms)
 
 📍 https://myapp.com (production)
@@ -260,6 +262,24 @@ Component: participants.index::exportStartingLists(42)
 📍 https://myapp.com (production)
 🕐 2026-05-19 10:33:40 UTC
 ```
+
+#### Was it the page or the server?
+
+The `🖥️` and `⚙️` lines tell a slow page apart from a busy server:
+
+- **`⚙️ CPU`** is the CPU time this PHP worker used during the request. The rest of the app time was spent waiting.
+- **`load`** is the 1, 5 and 15 minute load average. Compare it with the core count: a load above the cores means processes are queuing for CPU. On Linux it also counts processes waiting on disk.
+- **`RAM`** is used memory (`MemTotal − MemAvailable`) when the alert fired. Close to 100% means memory pressure or swapping.
+- **`steal`** is the share of CPU time the hypervisor gave to other guests during the request. On a VPS, a high value means a noisy neighbour, which load does not show.
+- **`PHP peak`** is the most memory PHP allocated for this request.
+
+| CPU vs app time | Server | Likely cause |
+|---|---|---|
+| CPU close to app time | calm | The page's own code is CPU-heavy. Optimise the page. |
+| CPU much lower | load above cores, high RAM or high steal | The request waited for a busy server. Look at what else was running. |
+| CPU much lower | calm | The request waited on something outside PHP: an HTTP call, a lock, the disk. |
+
+Load, core count, RAM and steal come from `/proc`, so they appear on Linux only; each one that cannot be read is left out.
 
 The slowest-query line logs the SQL template only (with `?` placeholders) — never the bound values. Bound models surface as `Model #key`; id/ulid properties as `key=value`. Arrays and other state are never dumped.
 

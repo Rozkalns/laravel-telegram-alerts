@@ -15,8 +15,10 @@ use Rozkalns\TelegramAlerts\Commands\NotifyDeployCommand;
 use Rozkalns\TelegramAlerts\Commands\SetupCiWebhookCommand;
 use Rozkalns\TelegramAlerts\Listeners\QueueFailureListener;
 use Rozkalns\TelegramAlerts\Middleware\SlowResponseMiddleware;
+use Rozkalns\TelegramAlerts\Support\Host;
 use Rozkalns\TelegramAlerts\Support\IpIdentity;
 use Rozkalns\TelegramAlerts\Support\Resolver;
+use Rozkalns\TelegramAlerts\Support\SystemHost;
 use Rozkalns\TelegramAlerts\Support\SystemResolver;
 
 final class TelegramAlertsServiceProvider extends ServiceProvider
@@ -33,6 +35,7 @@ final class TelegramAlertsServiceProvider extends ServiceProvider
         ));
 
         $this->app->bind(Resolver::class, SystemResolver::class);
+        $this->app->bind(Host::class, SystemHost::class);
 
         $this->app->scoped(IpIdentity::class, fn (): IpIdentity => new IpIdentity(
             resolver: $this->app->make(Resolver::class),
