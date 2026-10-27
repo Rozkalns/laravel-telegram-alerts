@@ -57,7 +57,7 @@ Everything is auto-registered by `TelegramAlertsServiceProvider`. The package is
 | Errors from the log | `TelegramHandler` via the `telegram` log channel (`TelegramLogChannel`). One alert per unique message per 60 s, truncated at 3000 characters. | adding `telegram` to `LOG_STACK` |
 | Deploys | `telegram:notify-deploy` (`NotifyDeployCommand`), names the latest commit | the deploy script |
 | Failed queue jobs | `QueueFailureListener` on `Queue::failing` | `queue_failures` (on by default) |
-| Slow responses | `SlowResponseMiddleware`, pushed onto the HTTP kernel. Names the caller (PTR + ASN through `Support/IpIdentity`), deduplicates per route, and applies a policy to verified crawlers. | `slow_response_threshold` > 0 |
+| Slow responses | `SlowResponseMiddleware`, pushed onto the HTTP kernel. Names the caller (PTR + ASN through `Support/IpIdentity`), adds server load, RAM, CPU steal and request CPU time (through `Support/Host`, which reads `/proc`), deduplicates per route, and applies a policy to verified crawlers. | `slow_response_threshold` > 0 |
 | Scheduler heartbeat | `telegram:heartbeat`, scheduled hourly | `scheduler_heartbeat` |
 | Backup check | `telegram:check-backup`, scheduled daily at 06:00 | `backup_path` set |
 | CI builds | `POST /api/telegram-alerts/ci` (`CiWebhookController`, bearer token checked by `CiWebhookMiddleware`); `telegram:ci-webhook-setup` creates the secret, stores it in GitHub and `.env` | `ci_webhook` + `ci_webhook_secret` |

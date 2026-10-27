@@ -9,6 +9,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Rozkalns\TelegramAlerts\Support\Host;
 use Rozkalns\TelegramAlerts\Support\IpIdentity;
 use Rozkalns\TelegramAlerts\Support\IpIdentityResult;
 use Rozkalns\TelegramAlerts\TelegramClient;
@@ -21,6 +22,7 @@ final readonly class SlowResponseMiddleware
     public function __construct(
         private TelegramClient $client,
         private IpIdentity $identity,
+        private Host $host,
     ) {}
 
     /**
@@ -29,6 +31,9 @@ final readonly class SlowResponseMiddleware
     public function handle(Request $request, Closure $next): Response
     {
         $request->attributes->set('_telegram_start_ms', now()->getTimestampMs());
+
+        $cpuStartMs = $this->host->cpuTimeMs();
+        $ticksStart = $this->host->cpuTicks();
 
         $queryCount = 0;
         $queryTimeMs = 0.0;
@@ -54,6 +59,19 @@ final readonly class SlowResponseMiddleware
         $response = $next($request);
 
         $request->attributes->set('_telegram_listening', false);
+
+        $cpuEndMs = $this->host->cpuTimeMs();
+        if ($cpuStartMs !== null && $cpuEndMs !== null) {
+            $request->attributes->set('_telegram_cpu_ms', $cpuEndMs - $cpuStartMs);
+        }
+
+        $ticksEnd = $this->host->cpuTicks();
+        if ($ticksStart !== null && $ticksEnd !== null && $ticksEnd['total'] > $ticksStart['total']) {
+            $request->attributes->set(
+                '_telegram_steal_pct',
+                ($ticksEnd['steal'] - $ticksStart['steal']) / ($ticksEnd['total'] - $ticksStart['total']) * 100,
+            );
+        }
 
         $request->attributes->set('_telegram_query_count', $queryCount);
         $request->attributes->set('_telegram_query_time_ms', $queryTimeMs);
@@ -177,7 +195,7 @@ final readonly class SlowResponseMiddleware
 
         $lines[] = '';
 
-        $lines = [...$lines, ...$this->describeDatabase($request, $elapsedMs)];
+        $lines = [...$lines, ...$this->describeDatabase($request, $elapsedMs), ...$this->describeHost($request)];
 
         $lines[] = sprintf('⏱️ %s ms (threshold: %s ms)', number_format($elapsedMs), number_format($thresholdMs));
 
@@ -318,6 +336,59 @@ final readonly class SlowResponseMiddleware
         if ($slowestSql !== '' && $slowestTimeMs >= config()->integer('telegram-alerts.slow_query_threshold', 100)) {
             $lines[] = sprintf('🐢 slowest: <code>%s</code> (%s ms)', e($this->truncateSql($slowestSql)), number_format($slowestTimeMs));
         }
+
+        return $lines;
+    }
+
+    /** @return list<string> */
+    private function describeHost(Request $request): array
+    {
+        $lines = [];
+
+        $server = [];
+
+        $load = $this->host->loadAverage();
+        if ($load !== null) {
+            $cpus = $this->host->cpuCount();
+
+            $server[] = sprintf(
+                'load %s%s',
+                implode(' · ', array_map(fn (float $value): string => number_format($value, 2), $load)),
+                $cpus !== null ? sprintf(' (%s %s)', $cpus, $cpus === 1 ? 'core' : 'cores') : '',
+            );
+        }
+
+        $memory = $this->host->memory();
+        if ($memory !== null && $memory['total'] > 0) {
+            $used = $memory['total'] - $memory['available'];
+
+            $server[] = sprintf(
+                'RAM %s%% (%s / %s GB)',
+                number_format($used / $memory['total'] * 100),
+                number_format($used / 1024 ** 3, 1),
+                number_format($memory['total'] / 1024 ** 3, 1),
+            );
+        }
+
+        $steal = $request->attributes->get('_telegram_steal_pct');
+        if (is_float($steal)) {
+            $server[] = sprintf('steal %s%%', number_format(max(0.0, $steal)));
+        }
+
+        if ($server !== []) {
+            $lines[] = '🖥️ '.implode(' · ', $server);
+        }
+
+        $process = [];
+
+        $cpuMs = $request->attributes->get('_telegram_cpu_ms');
+        if (is_float($cpuMs)) {
+            $process[] = sprintf('CPU %sms', number_format(max(0.0, $cpuMs)));
+        }
+
+        $process[] = sprintf('PHP peak %s MB', number_format($this->host->peakMemory() / 1024 ** 2));
+
+        $lines[] = '⚙️ '.implode(' · ', $process);
 
         return $lines;
     }
