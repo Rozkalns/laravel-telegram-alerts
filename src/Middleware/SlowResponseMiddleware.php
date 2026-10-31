@@ -58,6 +58,7 @@ final readonly class SlowResponseMiddleware
 
         $response = $next($request);
 
+        $request->attributes->set('_telegram_end_ms', now()->getTimestampMs());
         $request->attributes->set('_telegram_listening', false);
 
         $cpuEndMs = $this->host->cpuTimeMs();
@@ -104,7 +105,8 @@ final readonly class SlowResponseMiddleware
             return;
         }
 
-        $elapsedMs = now()->getTimestampMs() - $startMs;
+        $endMs = $request->attributes->getInt('_telegram_end_ms') ?: now()->getTimestampMs();
+        $elapsedMs = $endMs - $startMs;
 
         if ($elapsedMs < $thresholdMs) {
             return;

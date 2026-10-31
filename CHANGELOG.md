@@ -2,6 +2,20 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.11.1
+
+### Fixed
+
+- **Slow-response alerts no longer count work that runs after the response.** The elapsed time was read in `terminate()`, which Laravel calls after `defer()` callbacks, `afterResponse` jobs and the `terminate()` of middleware that runs first, so a page that answered in 50 ms but wrote an AI summary afterwards was reported as a 3 s slow response. The end time is now taken when the response is ready, at the end of `handle()`.
+
+### Changed
+
+- Dropped a `@phpstan-ignore` on `$request->route()` that Laravel 13.39's types made unused; phpstan failed on it with the newest dependencies, as CI installs them.
+
+### Upgrade notes
+
+Nothing to do: `^0.11.0` allows 0.11.1, so `composer update rozkalns/laravel-telegram-alerts` picks it up.
+
 ## v0.11.0
 
 ### Added
