@@ -115,6 +115,28 @@ it('sends alert when response exceeds threshold', function (): void {
         && str_contains((string) $request['text'], 'TestApp'));
 });
 
+it('does not count work that runs after the response is ready', function (): void {
+    config()->set('telegram-alerts.slow_response_threshold', 50);
+    app()->instance('slow-after-response', new class
+    {
+        public function handle(Request $request, Closure $next): mixed
+        {
+            return $next($request);
+        }
+
+        public function terminate(): void
+        {
+            passSlowThreshold();
+        }
+    });
+
+    Route::middleware(['slow-after-response', SlowResponseMiddleware::class])->get('/test-deferred', fn (): string => 'ok');
+
+    $this->get('/test-deferred')->assertOk();
+
+    Http::assertNothingSent();
+});
+
 it('includes method and threshold in the message', function (): void {
     config()->set('telegram-alerts.slow_response_threshold', 50);
 
