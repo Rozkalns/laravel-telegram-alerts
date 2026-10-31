@@ -187,7 +187,7 @@ final readonly class SlowResponseMiddleware
                 $lines[] = '🔗 '.implode(' · ', $escaped);
             }
         } else {
-            $action = $request->route()?->getActionName() ?? 'unknown'; // @phpstan-ignore nullsafe.neverNull, nullCoalesce.expr
+            $action = $request->route()?->getActionName() ?? 'unknown';
 
             $lines[] = sprintf('<code>%s %s</code>', e($request->method()), e($request->getRequestUri()));
             $lines[] = sprintf('<code>%s</code>', e($action));
