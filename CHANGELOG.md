@@ -2,6 +2,20 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.11.2
+
+### Added
+
+- **Alerts carry the request ID.** When Laravel's `Context` holds a `request_id` (set by `rozkalns/laravel-request-id`, or by the app itself), the footer of every alert with a footer shows it as `🔎 <code>…</code>`, between the release and the time. Error alerts, slow-response alerts and queue-failure alerts can then be matched with the request's log lines, its GlitchTip event and the ID on the user's error page. Without a `request_id` the footer is unchanged.
+
+### Changed
+
+- Dev only: `phpstan/phpstan` is held below 2.3.5. From 2.3.5 `pest-plugin-type-coverage` fails with `Call to undefined method AnalyserResult::getCollectedData()`, and CI installs the newest versions. Lift the cap once the plugin supports it.
+
+### Upgrade notes
+
+Nothing to do: `^0.11.0` allows 0.11.2, so `composer update rozkalns/laravel-telegram-alerts` picks it up. A test that asserts an alert's full text in an app that sets request IDs now sees the extra `🔎` line.
+
 ## v0.11.1
 
 ### Fixed

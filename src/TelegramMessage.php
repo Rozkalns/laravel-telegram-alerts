@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rozkalns\TelegramAlerts;
 
 use DateTimeInterface;
+use Illuminate\Support\Facades\Context;
 
 final class TelegramMessage
 {
@@ -86,9 +87,22 @@ final class TelegramMessage
             $lines[] = sprintf('🏷️ <code>%s</code>', e($release));
         }
 
+        $requestId = self::requestId();
+
+        if ($requestId !== null) {
+            $lines[] = sprintf('🔎 <code>%s</code>', e($requestId));
+        }
+
         $lines[] = sprintf('🕐 %s', ($at ?? now())->format('Y-m-d H:i:s T'));
 
         return $lines;
+    }
+
+    public static function requestId(): ?string
+    {
+        $requestId = Context::get('request_id');
+
+        return is_string($requestId) && $requestId !== '' ? $requestId : null;
     }
 
     public static function release(): ?string
