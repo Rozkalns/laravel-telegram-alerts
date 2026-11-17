@@ -13,7 +13,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **CI pipeline notifications** — webhook endpoint for GitHub Actions (or any CI) to report build results
 - **GlitchTip error tracking** — webhook receiver that turns GlitchTip issue alerts into Telegram messages with a tappable link to the issue
 - **Project identification** — `[APP_NAME]` prefix on every message, so one bot handles all your projects
-- **One message shape** — every alert shares the same header and a `📍 URL (env)` · `🏷️ release` · `🕐 time` footer, and `TelegramMessage` gives your own alerts the same shape
+- **One message shape** — every alert shares the same header and a `📍 URL (env)` · `🏷️ release` · `🔎 request ID` · `🕐 time` footer, and `TelegramMessage` gives your own alerts the same shape
 - **Rate limiting** — deduplication on all alert types to avoid notification storms
 - **Auto-registration** — everything registers itself via the service provider
 
@@ -419,6 +419,8 @@ app(TelegramClient::class)->send(
 The title and lines are HTML (Telegram's `parse_mode` is HTML), so pass anything that is not your own text through `e()`. `->at($time)` sets the time the footer reports, and `->withoutContext()` drops the footer for messages that are not about this deployment. `sendQueued()` accepts a message too, and renders it before queueing, so the footer shows when the alert fired.
 
 The footer's `🏷️` release comes from `telegram-alerts.release` (`TELEGRAM_ALERTS_RELEASE`), or else from `sentry.release`, which the Sentry SDK can derive from git, so most apps need no extra setting.
+
+The footer's `🔎` line is the ID of the request, command or job that sent the alert, read from Laravel's `Context` under `request_id`. [rozkalns/laravel-request-id](https://github.com/Rozkalns/laravel-request-id) puts it there, and any app can set it with `Context::add('request_id', $id)`. The same ID is on the request's log lines and its error page, so an alert leads straight to them. An app that sets none gets no `🔎` line.
 
 ## Configuration
 
