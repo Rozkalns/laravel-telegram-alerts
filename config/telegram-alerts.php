@@ -16,6 +16,12 @@ return [
 
     'queue_failures' => true,
 
+    // When Livewire is installed: alert when a Livewire snapshot that passed the
+    // APP_KEY checksum tries to load a class on Livewire's block list. Only someone
+    // who knows APP_KEY can sign a snapshot, so this alert means the key leaked.
+    // Also names the Livewire components and pages in every error's log context.
+    'livewire_tampering' => (bool) env('TELEGRAM_LIVEWIRE_TAMPERING', true),
+
     'slow_response_threshold' => (int) env('TELEGRAM_SLOW_RESPONSE_THRESHOLD', 0),
 
     'slow_response_exclude' => ['/health', '/up'],

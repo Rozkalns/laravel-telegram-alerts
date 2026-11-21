@@ -7,6 +7,7 @@ Send production errors, deploy notifications, and health monitoring alerts to Te
 - **Error alerts** — ERROR+ log entries sent to Telegram with exception class, file, and line number
 - **Deploy notifications** — artisan command to announce successful deploys
 - **Queue failure alerts** — instant notification when a queued job fails
+- **Leaked APP_KEY alert (Livewire)** — a 🔴 alert when a Livewire snapshot signed with your `APP_KEY` tries to load a blocked class, which only someone holding the key can do; every error from a Livewire update also logs its component names and pages
 - **Slow response detection** — alerts when requests exceed a configurable duration threshold, enriched with the user, a DB-vs-app time split, the slowest query, Livewire component/model context, and an identified caller (reverse DNS + ASN, with verified crawler detection), and server load, RAM, CPU steal and request CPU time
 - **Scheduler heartbeat** — periodic ping to confirm your scheduler is alive
 - **Backup verification** — daily check that backup files exist and are recent
@@ -223,6 +224,26 @@ php artisan tinker --execute 'throw new Exception("glitchtip test");'
 📍 https://myapp.com (production)
 🕐 2026-05-19 10:20:03 UTC
 ```
+
+### Leaked APP_KEY alert (Livewire)
+
+```
+🔴 [MyApp] APP_KEY is compromised: rotate now
+
+A Livewire snapshot signed with this app's APP_KEY tried to load a blocked class.
+Only someone who knows APP_KEY can sign a snapshot. Rotate it now.
+
+💥 `Livewire: Class [League\Flysystem\UrlGeneration\ShardedPrefixPublicUrlGenerator] is not allowed to be instantiated.`
+📡 203.0.113.7 · scanner.example.net
+🧩 `home.competitions @ /lv`
+
+📍 https://myapp.com (production)
+🕐 2026-11-18 19:54:07 UTC
+```
+
+Why the error proves a leak: Livewire's `SecurityPolicy` block list only checks class metadata from a snapshot that already passed `Checksum::verify()`, an HMAC keyed with `APP_KEY` (true for both hydrate paths in Livewire 4.4). A request without the key fails the checksum first and gets a 419, with no alert. So this error means the sender can sign snapshots, and the block list was the last defence; a gadget chain not on that list would have run with no error at all. Rotate `APP_KEY` at once.
+
+Active only when `livewire/livewire` is installed; at most one alert per 10 minutes; the normal error report still runs. The `🧩` lines (also added as `livewire_components` to the log context of every error from a Livewire update) carry component names and pages only, never property values.
 
 ### Slow response alert
 
@@ -443,6 +464,9 @@ return [
     // Queue failure alerts (enabled by default)
     'queue_failures' => true,
 
+    // Leaked APP_KEY alert + Livewire log context (on by default, only with Livewire)
+    'livewire_tampering' => true,
+
     // Slow response threshold in ms (0 = disabled)
     'slow_response_threshold' => 0,
     'slow_response_exclude' => ['/health', '/up'],
@@ -483,6 +507,7 @@ return [
 |---------|---------|-------------|
 | Error alerts | **On** when `telegram` is in `LOG_STACK` | `LOG_STACK=single,telegram` |
 | Queue failures | **On** | Set `queue_failures` to `false` to disable |
+| Leaked APP_KEY alert (Livewire) | **On** when Livewire is installed | Set `livewire_tampering` to `false` to disable |
 | Deploy notifications | Manual | `php artisan telegram:notify-deploy` |
 | Slow responses | **Off** | Set `slow_response_threshold` to ms value |
 | Heartbeat | **Off** | Set `scheduler_heartbeat` to `true` |
@@ -503,6 +528,7 @@ All Telegram sends go through a shared `TelegramClient`:
 Rate limiting uses the cache to deduplicate:
 - Error logs: 1 per unique message per 60 seconds
 - Queue failures: 1 per unique job+exception per 60 seconds
+- Leaked APP_KEY alert: 1 per 10 minutes
 - Slow responses: 1 per unique path+query (or Livewire component+method) per `slow_response_dedup_window`, default 15 minutes — suppressed repeats are counted and carried into the next alert
 - If cache is unavailable, rate limiting is skipped and messages send anyway
 

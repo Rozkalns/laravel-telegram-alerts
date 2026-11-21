@@ -2,6 +2,22 @@
 
 All notable changes to `rozkalns/laravel-telegram-alerts` will be documented in this file.
 
+## v0.12.0
+
+### Added
+
+- **Leaked APP_KEY alert for Livewire apps.** When a Livewire snapshot that passed the `APP_KEY` checksum tries to load a class on Livewire's block list, a separate `🔴 APP_KEY is compromised: rotate now` alert is sent, with the blocked class, the caller (IP, reverse DNS, ASN) and the component and page. Only someone holding `APP_KEY` can sign a snapshot, so this error means the key has leaked; a request with a wrong checksum gets a 419 and no alert. At most one alert per 10 minutes; the normal error report still runs. Found in a real attack on 2026-11-18, where the generic error alert did not say that the key had leaked.
+- **Livewire components in the error log context.** Every error from a Livewire update request gets `livewire_components` (for example `["home.competitions @ /lv"]`) in its log context, so a checksum or block-list error can be read from the log without the GlitchTip event. Names and pages only, never property values; at most 5 components, each value shortened to 120 characters.
+- Both are on by default and only active when `livewire/livewire` is installed. Turn them off with `livewire_tampering` (`TELEGRAM_LIVEWIRE_TAMPERING=false`).
+
+### Changed
+
+- Dev only: `livewire/livewire` is a dev dependency, so the test suite sends a really signed snapshot to a real Livewire endpoint.
+
+### Upgrade notes
+
+`^0.11` does not allow 0.12, so bump the constraint by hand: `composer require rozkalns/laravel-telegram-alerts:^0.12`. Nothing else to do. A test that asserts the full log context of an error from a Livewire request now sees the extra `livewire_components` key.
+
 ## v0.11.2
 
 ### Added
