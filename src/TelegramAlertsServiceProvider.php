@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace Rozkalns\TelegramAlerts;
 
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Foundation\Exceptions\Handler;
+use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 use Rozkalns\TelegramAlerts\Commands\CheckBackupCommand;
 use Rozkalns\TelegramAlerts\Commands\HeartbeatCommand;
 use Rozkalns\TelegramAlerts\Commands\NotifyDeployCommand;
 use Rozkalns\TelegramAlerts\Commands\SetupCiWebhookCommand;
+use Rozkalns\TelegramAlerts\Listeners\LivewireTamperingReporter;
 use Rozkalns\TelegramAlerts\Listeners\QueueFailureListener;
 use Rozkalns\TelegramAlerts\Middleware\SlowResponseMiddleware;
 use Rozkalns\TelegramAlerts\Support\Host;
@@ -20,6 +25,7 @@ use Rozkalns\TelegramAlerts\Support\IpIdentity;
 use Rozkalns\TelegramAlerts\Support\Resolver;
 use Rozkalns\TelegramAlerts\Support\SystemHost;
 use Rozkalns\TelegramAlerts\Support\SystemResolver;
+use Throwable;
 
 final class TelegramAlertsServiceProvider extends ServiceProvider
 {
@@ -70,6 +76,8 @@ final class TelegramAlertsServiceProvider extends ServiceProvider
             Queue::failing(fn (JobFailed $event) => $this->app->make(QueueFailureListener::class)->handle($event));
         }
 
+        $this->registerLivewireTampering();
+
         if (! $this->app->runningInConsole()) {
             /** @var \Illuminate\Foundation\Http\Kernel $kernel */
             $kernel = $this->app->make(Kernel::class);
@@ -85,6 +93,27 @@ final class TelegramAlertsServiceProvider extends ServiceProvider
             if ($backupPath !== '') {
                 $schedule->command(CheckBackupCommand::class)->dailyAt('06:00');
             }
+        });
+    }
+
+    private function registerLivewireTampering(): void
+    {
+        if (! config()->boolean('telegram-alerts.livewire_tampering', true) || ! class_exists(Livewire::class)) {
+            return;
+        }
+
+        $this->callAfterResolving(ExceptionHandler::class, function (ExceptionHandler $handler): void {
+            if (! $handler instanceof Handler) {
+                return;
+            }
+
+            $handler->buildContextUsing(fn (): array => array_filter([
+                'livewire_components' => LivewireTamperingReporter::components($this->app->make(Request::class)),
+            ]));
+
+            $handler->reportable(function (Throwable $e): void {
+                $this->app->make(LivewireTamperingReporter::class)->report($e, $this->app->make(Request::class));
+            });
         });
     }
 }

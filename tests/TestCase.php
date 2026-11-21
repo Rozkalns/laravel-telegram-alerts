@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use Rozkalns\TelegramAlerts\Support\Host;
 use Rozkalns\TelegramAlerts\Support\Resolver;
@@ -13,7 +14,7 @@ abstract class TestCase extends BaseTestCase
 {
     protected function getPackageProviders($app): array
     {
-        return [TelegramAlertsServiceProvider::class];
+        return [LivewireServiceProvider::class, TelegramAlertsServiceProvider::class];
     }
 
     protected function setUp(): void
